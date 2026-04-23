@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { decodeGB7 } from '../utils/gb7Codec'; // <-- Импортируем наш декодер
 
 export interface ImageMeta {
     width: number;
@@ -14,13 +15,13 @@ interface WorkspaceProps {
 export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    // 1. Устанавливаем дефолтный размер для пустого состояния
+    // 1. Дефолтное состояние без файла
     useEffect(() => {
         if (!file && canvasRef.current) {
             const canvas = canvasRef.current;
             canvas.width = 800;
             canvas.height = 600;
-
+            
             const ctx = canvas.getContext('2d');
             if (ctx) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -28,7 +29,7 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
         }
     }, [file]);
 
-    // 2. Логика загрузки и отрисовки изображения
+    // 2. Логика загрузки
     useEffect(() => {
         if (!file || !canvasRef.current) return;
 
@@ -52,15 +53,13 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
                         ctx.drawImage(img, 0, 0);
                     }
 
-                    // Определяем глубину цвета на основе расширения
-                    // Jpeg обычно 24-битный (без прозрачности), PNG - 32-битный (с прозрачностью)
                     const isJpeg = extension === 'jpg' || extension === 'jpeg';
                     const depth = isJpeg ? 24 : 32;
 
-                    onImageLoaded({
-                        width: img.width,
-                        height: img.height,
-                        colorDepth: depth
+                    onImageLoaded({ 
+                        width: img.width, 
+                        height: img.height, 
+                        colorDepth: depth 
                     });
                 };
                 img.src = e.target?.result as string;
@@ -68,7 +67,36 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
 
             reader.readAsDataURL(file);
         } else if (extension === 'gb7') {
-            console.log('Формат GB7 скоро будет реализован!');
+            // Новая логика для формата GB7
+            file.arrayBuffer().then((buffer) => {
+                const imageData = decodeGB7(buffer);
+                
+                if (!imageData) {
+                    alert("Ошибка: не удалось прочитать файл формата GB7.");
+                    return;
+                }
+
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                // Устанавливаем размеры из декодированных данных
+                canvas.width = imageData.width;
+                canvas.height = imageData.height;
+
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.putImageData(imageData, 0, 0);
+                }
+
+                onImageLoaded({ 
+                    width: imageData.width, 
+                    height: imageData.height, 
+                    colorDepth: 7 
+                });
+            }).catch(err => {
+                console.error("Ошибка при чтении файла:", err);
+            });
         }
 
     }, [file, onImageLoaded]);
