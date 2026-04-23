@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+
+@theme {
+  --color-editor-bg: #1e1e1e;
+  --color-editor-panel: #252526;
+  --color-editor-border: #333333;
+  --color-editor-text: #cccccc;
+  --color-editor-accent: #007acc;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; 
+}
