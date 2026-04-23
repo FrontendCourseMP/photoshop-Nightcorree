@@ -59,7 +59,7 @@ export function Toolbar({ onFileSelect }: ToolbarProps) {
   };
 
   return (
-    <div className="h-12 bg-editor-panel border-b border-editor-border flex items-center px-4 gap-2 shadow-sm select-none shrink-0">
+    <div className="h-12 bg-editor-panel border-b border-editor-border flex items-center px-4 gap-2 shadow-sm select-none shrink-0 overflow-x-auto whitespace-nowrap">
       <div className="flex items-center gap-2 text-editor-accent mr-4">
         <ImageIcon size={20} />
         <span className="font-semibold text-sm">GB7 Editor</span>

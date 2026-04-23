@@ -8,4 +8,6 @@ export default defineConfig({
     react(),
     tailwindcss()
   ],
+  // Указываем базовый путь для корректной работы путей к ассетам на хостинге Render
+  base: '/',
 })
