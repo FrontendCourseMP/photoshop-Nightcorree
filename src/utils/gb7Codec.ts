@@ -1,14 +1,16 @@
+// src/utils/gb7Codec.ts
+
+/**
+ * Декодер: из бинарных данных в ImageData
+ */
 export function decodeGB7(buffer: ArrayBuffer): ImageData | null {
     const view = new DataView(buffer);
     const bytes = new Uint8Array(buffer);
 
-    // 1. Проверяем сигнатуру: 0x47 (G), 0x42 (B), 0x37 (7), 0x1D
-    if (bytes[0] !== 0x47 || bytes[1] !== 0x42 || bytes[2] !== 0x37 || bytes[3] !== 0x1D) {
-        console.error("Неверная сигнатура файла GB7");
-        return null;
-    }
+    // Проверка сигнатуры
+    if (bytes[0] !== 0x47 || bytes[1] !== 0x42 || bytes[2] !== 0x37 || bytes[3] !== 0x1D) return null;
 
-    // 2. Читаем версию и флаги
+    // Читаем версию и ПРОВЕРЯЕМ её (это исправит ошибку TypeScript)
     const version = bytes[4];
     if (version !== 0x01) {
         console.error("Неподдерживаемая версия формата GB7");
@@ -16,46 +18,68 @@ export function decodeGB7(buffer: ArrayBuffer): ImageData | null {
     }
 
     const flags = bytes[5];
-    const hasMask = (flags & 0x01) === 1; // Проверяем 0-й бит флага маски
-
-    // 3. Читаем ширину и высоту (Big-Endian, поэтому false во втором аргументе)
+    const hasMask = (flags & 0x01) === 1;
     const width = view.getUint16(6, false);
     const height = view.getUint16(8, false);
 
-    // Смещение до данных (12 байт заголовка)
-    const dataOffset = 12;
-    const expectedLength = width * height;
-
-    if (bytes.length < dataOffset + expectedLength) {
-        console.error("Файл поврежден: недостаточно данных для изображения");
-        return null;
-    }
-
-    // 4. Формируем массив пикселей для Canvas (ImageData требует 4 байта на пиксель: R, G, B, A)
     const imageData = new ImageData(width, height);
-    const pixelData = bytes.subarray(dataOffset, dataOffset + expectedLength);
+    const pixelData = bytes.subarray(12, 12 + width * height);
 
-    for (let i = 0; i < expectedLength; i++) {
+    for (let i = 0; i < pixelData.length; i++) {
         const byte = pixelData[i];
-
-        // Биты 6-0: значение оттенка серого (0 - 127)
         const gray7 = byte & 0x7F;
-        // Переводим 7-битное значение в 8-битное (0 - 255) для отрисовки
         const gray8 = Math.round((gray7 / 127) * 255);
+        let alpha = 255;
+        if (hasMask) alpha = ((byte >> 7) & 0x01) === 1 ? 255 : 0;
 
-        let alpha = 255; // По умолчанию непрозрачный
-        if (hasMask) {
-            // Бит 7: маска прозрачности (1 - видим, 0 - прозрачен)
-            const maskBit = (byte >> 7) & 0x01;
-            alpha = maskBit === 1 ? 255 : 0;
-        }
+        const idx = i * 4;
+        imageData.data[idx] = gray8;
+        imageData.data[idx + 1] = gray8;
+        imageData.data[idx + 2] = gray8;
+        imageData.data[idx + 3] = alpha;
+    }
+    return imageData;
+}
 
-        const rgbaIndex = i * 4;
-        imageData.data[rgbaIndex] = gray8;     // Red
-        imageData.data[rgbaIndex + 1] = gray8; // Green
-        imageData.data[rgbaIndex + 2] = gray8; // Blue
-        imageData.data[rgbaIndex + 3] = alpha; // Alpha
+/**
+ * Кодер: из ImageData в бинарный формат GB7
+ */
+export function encodeGB7(imageData: ImageData): ArrayBuffer {
+    const { width, height, data } = imageData;
+    // Размер: 12 байт заголовок + W*H байт данных
+    const buffer = new ArrayBuffer(12 + width * height);
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+
+    // 1. Заголовок
+    bytes[0] = 0x47; // G
+    bytes[1] = 0x42; // B
+    bytes[2] = 0x37; // 7
+    bytes[3] = 0x1D; // Разделитель
+    bytes[4] = 0x01; // Версия
+    bytes[5] = 0x01; // Флаг: всегда ставим 1 (маска присутствует), чтобы поддерживать прозрачность
+    view.setUint16(6, width, false);  // Ширина (Big-Endian)
+    view.setUint16(8, height, false); // Высота (Big-Endian)
+    view.setUint16(10, 0, false);     // Резерв
+
+    // 2. Данные изображения
+    for (let i = 0; i < width * height; i++) {
+        const idx = i * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const a = data[idx + 3];
+
+        // Считаем оттенки серого (0-255) и переводим в 7 бит (0-127)
+        const gray8 = Math.round((r + g + b) / 3);
+        const gray7 = Math.round((gray8 / 255) * 127);
+
+        // Бит маски (Bit 7): 1 если непрозрачный, 0 если прозрачный
+        const maskBit = a >= 128 ? 1 : 0;
+
+        // Собираем байт: [Маска (1 бит)] [Серый (7 бит)]
+        bytes[12 + i] = (maskBit << 7) | (gray7 & 0x7F);
     }
 
-    return imageData;
+    return buffer;
 }
