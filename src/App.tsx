@@ -1,12 +1,24 @@
+import { Toolbar } from './components/Toolbar';
+import { Workspace } from './components/Workspace';
+import { StatusBar } from './components/StatusBar';
+
 function App() {
+  // В будущем эти стейты будут меняться при загрузке картинки
+  const currentWidth = 0;
+  const currentHeight = 0;
+  const currentColorDepth = 0;
+
   return (
-    <div className="h-screen w-screen bg-editor-bg text-editor-text flex flex-col items-center justify-center">
-      <h1 className="text-3xl font-bold text-editor-accent">
-        Графический редактор
-      </h1>
-      <p className="mt-4">Tailwind v4 успешно подключен!</p>
+    <div className="h-screen w-screen flex flex-col bg-editor-bg text-editor-text overflow-hidden">
+      <Toolbar />
+      <Workspace />
+      <StatusBar 
+        width={currentWidth} 
+        height={currentHeight} 
+        colorDepth={currentColorDepth} 
+      />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
