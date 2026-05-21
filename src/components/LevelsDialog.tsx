@@ -98,11 +98,7 @@ export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImag
     };
 
     const handleReset = () => {
-        setSettings(prev => ({
-            ...prev,
-            [selectedChannel]: (selectedChannel === 'master' || selectedChannel === 'r') && isGrayscale 
-                ? { ...DEFAULT_LEVELS_GS } : { ...DEFAULT_LEVELS }
-        }));
+        setSettings(initialSettings);
     };
 
     const handleCancel = () => {
