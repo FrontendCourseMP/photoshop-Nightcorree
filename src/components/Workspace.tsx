@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { decodeGB7 } from '../utils/gb7Codec';
-import { applyChannels, rgbToLab, applyLevelsLUT } from '../utils/imageUtils';
+import { rgbToLab, applyImageFilters } from '../utils/imageUtils';
 import type { ChannelState } from './ChannelPanel';
 import type { EditorTool } from './Toolbar';
 import type { ColorInfo } from '../App';
@@ -9,6 +9,7 @@ export interface ImageMeta {
     width: number;
     height: number;
     colorDepth: number;
+    hasAlpha: boolean;
 }
 
 interface WorkspaceProps {
@@ -19,11 +20,12 @@ interface WorkspaceProps {
     onColorPicked: (info: ColorInfo) => void;
     imageMeta: ImageMeta | null;
     levelsLUTs: Record<string, Uint8Array> | null;
+    imageData: ImageData | null;
 }
 
-export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked, imageMeta, levelsLUTs }: WorkspaceProps) {
+export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked, imageMeta, levelsLUTs, imageData }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null);
+    const hasBeenFilteredRef = useRef<boolean>(false);
 
     // 1. Дефолтное состояние без файла
     useEffect(() => {
@@ -31,12 +33,9 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
             const canvas = canvasRef.current;
             canvas.width = 800;
             canvas.height = 600;
-            
+            hasBeenFilteredRef.current = false;
             const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            }
-            setOriginalImageData(null);
+            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
     }, [file]);
 
@@ -48,7 +47,6 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
 
         if (extension === 'png' || extension === 'jpg' || extension === 'jpeg') {
             const reader = new FileReader();
-
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
@@ -57,100 +55,94 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
                     canvas.height = img.height;
                     const ctx = canvas.getContext('2d');
                     if (!ctx) return;
-                    
                     ctx.drawImage(img, 0, 0);
-                    const imageData = ctx.getImageData(0, 0, img.width, img.height);
+                    const loadedData = ctx.getImageData(0, 0, img.width, img.height);
 
                     const isJpeg = extension === 'jpg' || extension === 'jpeg';
-                    const depth = isJpeg ? 24 : 32;
-
-                    setOriginalImageData(imageData);
                     onImageLoaded({ 
                         width: img.width, 
                         height: img.height, 
-                        colorDepth: depth 
-                    }, imageData);
+                        colorDepth: isJpeg ? 24 : 32,
+                        hasAlpha: !isJpeg
+                    }, loadedData);
                 };
                 img.src = e.target?.result as string;
             };
-
             reader.readAsDataURL(file);
         } else if (extension === 'gb7') {
             file.arrayBuffer().then((buffer) => {
                 const result = decodeGB7(buffer);
-                
                 if (!result) {
                     alert("Ошибка: не удалось прочитать файл формата GB7.");
                     return;
                 }
-
-                setOriginalImageData(result.imageData);
                 onImageLoaded({ 
                     width: result.width, 
                     height: result.height, 
-                    colorDepth: result.colorDepth 
+                    colorDepth: result.colorDepth,
+                    hasAlpha: result.colorDepth === 8
                 }, result.imageData);
-            }).catch(err => {
-                console.error("Ошибка при чтении файла:", err);
             });
         }
-
     }, [file, onImageLoaded]);
 
-    // 3. Логика отрисовки при изменении каналов, LUT или оригинальных данных
+    // 3. Логика отрисовки при изменении
     useEffect(() => {
-        if (!originalImageData || !canvasRef.current) return;
+        if (!imageData || !canvasRef.current) return;
+
+        const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
+        const isDefaultChannels = isGrayscale 
+            ? (activeChannels.r && activeChannels.a) 
+            : (activeChannels.r && activeChannels.g && activeChannels.b && activeChannels.a);
+
+        // Если изменений нет, рисуем оригинал
+        if (!levelsLUTs && isDefaultChannels) {
+            const canvas = canvasRef.current;
+            canvas.width = imageData.width;
+            canvas.height = imageData.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.putImageData(imageData, 0, 0);
+                hasBeenFilteredRef.current = false;
+            }
+            return;
+        }
 
         const canvas = canvasRef.current;
-        canvas.width = originalImageData.width;
-        canvas.height = originalImageData.height;
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
+            // Применяем все фильтры за один проход
+            const processedData = applyImageFilters(
+                imageData, 
+                activeChannels, 
+                isGrayscale,
+                levelsLUTs as any
+            );
             
-            // 1. Применяем Уровни (LUT), если они есть (предпросмотр)
-            let processedData = originalImageData;
-            if (levelsLUTs) {
-                processedData = applyLevelsLUT(
-                    originalImageData, 
-                    levelsLUTs as any,
-                    isGrayscale
-                );
-            }
-
-            // 2. Применяем Маску Каналов
-            const filteredData = applyChannels(processedData, activeChannels, isGrayscale);
-            
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.putImageData(filteredData, 0, 0);
+            ctx.putImageData(processedData, 0, 0);
+            hasBeenFilteredRef.current = true;
         }
-    }, [originalImageData, activeChannels, imageMeta, levelsLUTs]);
+    }, [imageData, activeChannels, imageMeta, levelsLUTs]);
 
     // 4. Логика пипетки
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (activeTool !== 'eyedropper' || !originalImageData || !canvasRef.current) return;
-
+        if (activeTool !== 'eyedropper' || !imageData || !canvasRef.current) return;
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
-
-        // Вычисляем масштаб (реальные пиксели / CSS пиксели)
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
-
-        // Координаты клика относительно начала холста
         const x = Math.floor((e.clientX - rect.left) * scaleX);
         const y = Math.floor((e.clientY - rect.top) * scaleY);
 
-        // Проверка границ (на всякий случай)
-        if (x >= 0 && x < originalImageData.width && y >= 0 && y < originalImageData.height) {
-            const idx = (y * originalImageData.width + x) * 4;
-            const r = originalImageData.data[idx];
-            const g = originalImageData.data[idx + 1];
-            const b = originalImageData.data[idx + 2];
-            
+        if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
+            const idx = (y * imageData.width + x) * 4;
+            const r = imageData.data[idx];
+            const g = imageData.data[idx + 1];
+            const b = imageData.data[idx + 2];
             const lab = rgbToLab(r, g, b);
-
             onColorPicked({ x, y, r, g, b, lab });
         }
     };

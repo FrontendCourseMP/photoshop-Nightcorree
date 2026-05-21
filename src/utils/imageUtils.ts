@@ -1,73 +1,98 @@
 import type { ChannelState } from '../components/ChannelPanel';
 
 /**
- * Применяет маску каналов к ImageData, возвращая новый объект ImageData.
- * Исходный объект не мутируется.
+ * Применяет уровни и маску каналов за один проход.
+ * Оптимизировано для больших изображений.
  */
-export function applyChannels(original: ImageData, channels: ChannelState, isGrayscale: boolean): ImageData {
-    const { width, height, data } = original;
-    const filtered = new ImageData(width, height);
-    const fData = filtered.data;
+export function applyImageFilters(
+    original: ImageData,
+    channels: ChannelState,
+    isGrayscale: boolean,
+    luts: { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array } | null
+): ImageData {
+    const { width, height, data: iData } = original;
+    const output = new ImageData(new Uint8ClampedArray(iData.length), width, height);
+    const oData = output.data;
 
-    // Проверяем, включена ли ТОЛЬКО альфа
     const onlyAlpha = channels.a && (isGrayscale ? !channels.r : (!channels.r && !channels.g && !channels.b));
 
-    for (let i = 0; i < data.length; i += 4) {
-        if (onlyAlpha) {
-            // Режим маски прозрачности: 
-            // Белый там, где непрозрачно, черный там, где прозрачно.
-            const alphaValue = data[i + 3];
-            fData[i] = alphaValue;
-            fData[i + 1] = alphaValue;
-            fData[i + 2] = alphaValue;
-            fData[i + 3] = 255;
-        } else {
-            // Обычный режим фильтрации
-            fData[i] = channels.r ? data[i] : 0;
-            
-            if (isGrayscale) {
-                // Для ч/б изображений все каналы R,G,B одинаковы
-                fData[i + 1] = channels.r ? data[i + 1] : 0;
-                fData[i + 2] = channels.r ? data[i + 2] : 0;
-            } else {
-                fData[i + 1] = channels.g ? data[i + 1] : 0;
-                fData[i + 2] = channels.b ? data[i + 2] : 0;
-            }
+    const lutR = luts?.r;
+    const lutG = luts?.g;
+    const lutB = luts?.b;
+    const lutA = luts?.a;
 
-            // Если альфа-канал выключен, делаем пиксель полностью непрозрачным (255),
-            // чтобы "проявить" скрытые данные (как в Photoshop).
-            // Если включен - оставляем оригинальную прозрачность.
-            fData[i + 3] = channels.a ? data[i + 3] : 255;
+    for (let i = 0; i < iData.length; i += 4) {
+        if (onlyAlpha) {
+            let a = iData[i + 3];
+            if (lutA) a = lutA[a];
+            oData[i] = a;
+            oData[i + 1] = a;
+            oData[i + 2] = a;
+            oData[i + 3] = 255;
+            continue;
         }
+
+        let r = iData[i];
+        let g = iData[i + 1];
+        let b = iData[i + 2];
+        let a = iData[i + 3];
+
+        if (luts) {
+            if (isGrayscale) {
+                const idx = lutR!.length === 128 ? Math.min(127, Math.floor(r / 2)) : r;
+                r = lutR!.length === 128 ? lutR![idx] * 2 : lutR![idx];
+                g = r; b = r;
+            } else {
+                r = lutR![r];
+                g = lutG![g];
+                b = lutB![b];
+            }
+            a = lutA![a];
+        }
+
+        oData[i] = channels.r ? r : 0;
+        if (isGrayscale) {
+            oData[i + 1] = channels.r ? r : 0;
+            oData[i + 2] = channels.r ? r : 0;
+        } else {
+            oData[i + 1] = channels.g ? g : 0;
+            oData[i + 2] = channels.b ? b : 0;
+        }
+        oData[i + 3] = channels.a ? a : 255;
     }
 
-    return filtered;
+    return output;
 }
 
 /**
  * Создает уменьшенную копию ImageData для превью.
+ * Использует ручной алгоритм ближайшего соседа (Nearest Neighbor),
+ * чтобы гарантированно сохранить значения каналов даже в прозрачных областях.
  */
 export function createThumbnail(original: ImageData, maxW: number = 100, maxH: number = 100): ImageData {
     const scale = Math.min(maxW / original.width, maxH / original.height, 1);
-    const w = Math.floor(original.width * scale);
-    const h = Math.floor(original.height * scale);
+    const w = Math.max(1, Math.floor(original.width * scale));
+    const h = Math.max(1, Math.floor(original.height * scale));
 
-    const canvas = document.createElement('canvas');
-    canvas.width = original.width;
-    canvas.height = original.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return original;
+    const output = new ImageData(w, h);
+    const oData = output.data;
+    const iData = original.data;
+    const iW = original.width;
 
-    ctx.putImageData(original, 0, 0);
-
-    const outCanvas = document.createElement('canvas');
-    outCanvas.width = w;
-    outCanvas.height = h;
-    const outCtx = outCanvas.getContext('2d');
-    if (!outCtx) return original;
-
-    outCtx.drawImage(canvas, 0, 0, w, h);
-    return outCtx.getImageData(0, 0, w, h);
+    for (let y = 0; y < h; y++) {
+        const srcY = Math.floor(y / scale);
+        for (let x = 0; x < w; x++) {
+            const srcX = Math.floor(x / scale);
+            const srcIdx = (srcY * iW + srcX) * 4;
+            const dstIdx = (y * w + x) * 4;
+            
+            oData[dstIdx] = iData[srcIdx];
+            oData[dstIdx + 1] = iData[srcIdx + 1];
+            oData[dstIdx + 2] = iData[srcIdx + 2];
+            oData[dstIdx + 3] = iData[srcIdx + 3];
+        }
+    }
+    return output;
 }
 
 /**
@@ -77,61 +102,33 @@ export function getChannelPreview(thumbnail: ImageData, channel: keyof ChannelSt
     const { width, height, data } = thumbnail;
     const preview = new ImageData(width, height);
     const pData = preview.data;
-
     for (let i = 0; i < data.length; i += 4) {
         let value = 0;
         if (channel === 'r') value = data[i];
         else if (channel === 'g') value = data[i + 1];
         else if (channel === 'b') value = data[i + 2];
         else if (channel === 'a') value = data[i + 3];
-
-        pData[i] = value;
-        pData[i + 1] = value;
-        pData[i + 2] = value;
-        pData[i + 3] = 255;
+        pData[i] = value; pData[i + 1] = value; pData[i + 2] = value; pData[i + 3] = 255;
     }
-
     return preview;
 }
 
 /**
  * Конвертирует RGB в CIELAB.
- * Использует стандартный осветитель D65.
  */
 export function rgbToLab(r: number, g: number, b: number): { l: number; a: number; b: number } {
-    let nr = r / 255;
-    let ng = g / 255;
-    let nb = b / 255;
-
+    let nr = r / 255; let ng = g / 255; let nb = b / 255;
     nr = nr > 0.04045 ? Math.pow((nr + 0.055) / 1.055, 2.4) : nr / 12.92;
     ng = ng > 0.04045 ? Math.pow((ng + 0.055) / 1.055, 2.4) : ng / 12.92;
     nb = nb > 0.04045 ? Math.pow((nb + 0.055) / 1.055, 2.4) : nb / 12.92;
-
-    nr *= 100;
-    ng *= 100;
-    nb *= 100;
-
+    nr *= 100; ng *= 100; nb *= 100;
     const x = nr * 0.4124 + ng * 0.3576 + nb * 0.1805;
     const y = nr * 0.2126 + ng * 0.7152 + nb * 0.0722;
     const z = nr * 0.0193 + ng * 0.1192 + nb * 0.9505;
-
-    const xn = 95.047;
-    const yn = 100.000;
-    const zn = 108.883;
-
-    const fx = f(x / xn);
-    const fy = f(y / yn);
-    const fz = f(z / zn);
-
-    const l = 116 * fy - 16;
-    const la = 500 * (fx - fy);
-    const lb = 200 * (fy - fz);
-
-    return { 
-        l: Math.round(l * 100) / 100, 
-        a: Math.round(la * 100) / 100, 
-        b: Math.round(lb * 100) / 100 
-    };
+    const xn = 95.047; const yn = 100.000; const zn = 108.883;
+    const fx = f(x / xn); const fy = f(y / yn); const fz = f(z / zn);
+    const l = 116 * fy - 16; const la = 500 * (fx - fy); const lb = 200 * (fy - fz);
+    return { l: Math.round(l * 100) / 100, a: Math.round(la * 100) / 100, b: Math.round(lb * 100) / 100 };
 }
 
 function f(t: number): number {
@@ -144,13 +141,10 @@ function f(t: number): number {
 export function generateLevelsLUT(black: number, white: number, gamma: number, max: number): Uint8Array {
     const lut = new Uint8Array(max + 1);
     const range = white - black;
-
     for (let i = 0; i <= max; i++) {
-        if (i <= black) {
-            lut[i] = 0;
-        } else if (i >= white) {
-            lut[i] = max;
-        } else {
+        if (i <= black) lut[i] = 0;
+        else if (i >= white) lut[i] = max;
+        else {
             const normalized = (i - black) / range;
             lut[i] = Math.round(Math.pow(normalized, 1 / gamma) * max);
         }
@@ -159,74 +153,22 @@ export function generateLevelsLUT(black: number, white: number, gamma: number, m
 }
 
 /**
- * Применяет наборы LUT к ImageData.
- */
-export function applyLevelsLUT(
-    original: ImageData, 
-    luts: { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array },
-    isGrayscale: boolean
-): ImageData {
-    const { width, height, data } = original;
-    const output = new ImageData(new Uint8ClampedArray(data), width, height);
-    const oData = output.data;
-
-    for (let i = 0; i < oData.length; i += 4) {
-        if (isGrayscale) {
-            if (luts.r.length === 128) {
-                const val = Math.min(127, Math.floor(oData[i] / 2));
-                const newVal = luts.r[val] * 2;
-                oData[i] = newVal;
-                oData[i + 1] = newVal;
-                oData[i + 2] = newVal;
-            } else {
-                oData[i] = luts.r[oData[i]];
-                oData[i + 1] = luts.r[oData[i + 1]];
-                oData[i + 2] = luts.r[oData[i + 2]];
-            }
-        } else {
-            oData[i] = luts.r[oData[i]];
-            oData[i + 1] = luts.g[oData[i + 1]];
-            oData[i + 2] = luts.b[oData[i + 2]];
-        }
-        oData[i + 3] = luts.a[oData[i + 3]];
-    }
-
-    return output;
-}
-
-/**
  * Рассчитывает гистограмму для указанного канала или композитную.
- * Возвращает массив частот.
  */
 export function calculateHistogram(imageData: ImageData, channel: 'master' | 'r' | 'g' | 'b' | 'a', isGrayscale: boolean): number[] {
     const { data } = imageData;
     const maxVal = isGrayscale ? 128 : 256;
     const histogram = new Array(maxVal).fill(0);
-
     for (let i = 0; i < data.length; i += 4) {
         let value = 0;
         const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        const a = data[i + 3];
-
-        if (channel === 'master') {
-            if (isGrayscale) {
-                value = r;
-            } else {
-                value = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-            }
-        } else if (channel === 'r') value = r;
-        else if (channel === 'g') value = g;
-        else if (channel === 'b') value = b;
-        else if (channel === 'a') value = a;
-
-        if (isGrayscale) {
-            histogram[Math.min(127, Math.floor(value / 2))]++;
-        } else {
-            histogram[Math.min(255, value)]++;
-        }
+        if (channel === 'master') value = isGrayscale ? r : Math.round(0.299 * r + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+        else if (channel === 'r') value = r;
+        else if (channel === 'g') value = data[i + 1];
+        else if (channel === 'b') value = data[i + 2];
+        else if (channel === 'a') value = data[i + 3];
+        if (isGrayscale) histogram[Math.min(127, Math.floor(value / 2))]++;
+        else histogram[Math.min(255, value)]++;
     }
-
     return histogram;
 }

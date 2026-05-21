@@ -4,7 +4,7 @@ import { Workspace, type ImageMeta } from './components/Workspace';
 import { StatusBar } from './components/StatusBar';
 import { ChannelPanel, type ChannelState } from './components/ChannelPanel';
 import { LevelsDialog } from './components/LevelsDialog';
-import { createThumbnail } from './utils/imageUtils';
+import { createThumbnail, applyImageFilters } from './utils/imageUtils';
 
 export interface ColorInfo {
   x: number;
@@ -50,7 +50,22 @@ function App() {
 
   const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
 
-  const handleApplyLevels = (_luts: Record<string, Uint8Array>) => {
+  const handleApplyLevels = (luts: Record<string, Uint8Array>) => {
+    if (!originalImageData) return;
+    
+    // ПРОВЕРКА: Применяем уровни ко ВСЕМ каналам (все true), 
+    // чтобы не "запекать" текущую видимость (например, скрытую Альфу) в данные навсегда.
+    const allChannels: ChannelState = { r: true, g: true, b: true, a: true };
+    const processed = applyImageFilters(originalImageData, allChannels, isGrayscale, luts as any);
+    
+    setOriginalImageData(processed);
+    setThumbnailImageData(createThumbnail(processed, 48, 48));
+    setPreviewLUTs(null);
+    setIsLevelsOpen(false);
+  };
+
+  const handleCancelLevels = () => {
+    setPreviewLUTs(null);
     setIsLevelsOpen(false);
   };
 
@@ -80,6 +95,7 @@ function App() {
             onColorPicked={setPickedColor}
             imageMeta={imageMeta}
             levelsLUTs={previewLUTs}
+            imageData={originalImageData}
           />
         </div>
         <ChannelPanel 
@@ -87,6 +103,7 @@ function App() {
           onToggle={handleToggleChannel} 
           thumbnailImageData={thumbnailImageData}
           isGrayscale={isGrayscale}
+          hasAlpha={!!imageMeta?.hasAlpha}
         />
       </main>
       
@@ -102,7 +119,7 @@ function App() {
 
       <LevelsDialog 
         isOpen={isLevelsOpen}
-        onClose={() => setIsLevelsOpen(false)}
+        onClose={handleCancelLevels}
         onApply={handleApplyLevels}
         onPreview={setPreviewLUTs}
         originalImageData={originalImageData}
