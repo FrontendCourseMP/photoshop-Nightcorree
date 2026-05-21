@@ -43,7 +43,7 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
         }
     }, [file]);
 
-    // 2. Логика загрузки (Оптимизировано: URL.createObjectURL)
+    // 2. Логика загрузки (Оптимизировано: URL.createObjectURL + Direct Canvas Access)
     useEffect(() => {
         if (!file || !canvasRef.current) return;
 
@@ -63,31 +63,30 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
                 const canvas = canvasRef.current;
                 if (!canvas) return;
 
+                // Рисуем на главный холст мгновенно
                 canvas.width = img.width;
                 canvas.height = img.height;
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                     ctx.drawImage(img, 0, 0);
                 }
+                hasBeenFilteredRef.current = false;
 
-                // Фоновое извлечение данных, чтобы не блокировать UI-поток при загрузке
+                // Считываем данные напрямую с главного холста (экономим ОЗУ)
                 setTimeout(() => {
                     if (isCancelled) return;
                     
-                    const tempC = document.createElement('canvas');
-                    tempC.width = img.width;
-                    tempC.height = img.height;
-                    const tctx = tempC.getContext('2d');
-                    tctx?.drawImage(img, 0, 0);
-                    const loadedData = tctx!.getImageData(0, 0, img.width, img.height);
+                    const mainCanvas = canvasRef.current;
+                    if (!mainCanvas) return;
+                    const mainCtx = mainCanvas.getContext('2d');
+                    if (!mainCtx) return;
 
-                    // Инициализируем буфер один раз при загрузке
+                    const loadedData = mainCtx.getImageData(0, 0, img.width, img.height);
                     targetDataRef.current = new ImageData(img.width, img.height);
 
                     const isJpeg = extension === 'jpg' || extension === 'jpeg';
                     
-                    // УМНАЯ ПРОВЕРКА АЛЬФЫ:
-                    // Если это не JPEG, проверяем, есть ли реально прозрачные пиксели.
+                    // УМНАЯ ПРОВЕРКА АЛЬФЫ
                     let hasRealAlpha = false;
                     if (!isJpeg) {
                         const data = loadedData.data;
@@ -106,9 +105,12 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
                         hasAlpha: hasRealAlpha
                     }, loadedData);
 
-                    URL.revokeObjectURL(objectUrl);
+                    // Очистка памяти
                     img.onload = null;
-                }, 50);
+                    img.onerror = null;
+                    img.src = ''; // Явный намек GC на очистку декодированных данных
+                    URL.revokeObjectURL(objectUrl);
+                }, 10);
             };
 
             img.src = objectUrl;
@@ -123,6 +125,16 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
                 }
                 
                 targetDataRef.current = new ImageData(result.width, result.height);
+                hasBeenFilteredRef.current = false;
+
+                // МГНОВЕННАЯ ОТРИСОВКА: Выводим на экран сразу после декодирования
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    canvas.width = result.width;
+                    canvas.height = result.height;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) ctx.putImageData(result.imageData, 0, 0);
+                }
 
                 onImageLoaded({ 
                     width: result.width, 
@@ -139,7 +151,7 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
 
     }, [file, onImageLoaded]);
 
-    // 3. Логика отрисовки при изменении (Оптимизировано: Zero-Allocation)
+    // 3. Логика отрисовки при изменении (Оптимизировано: предотвращение лишних перерисовок)
     useEffect(() => {
         if (!imageData || !canvasRef.current || !targetDataRef.current) return;
 
@@ -148,32 +160,31 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
             ? (activeChannels.r && activeChannels.a) 
             : (activeChannels.r && activeChannels.g && activeChannels.b && activeChannels.a);
 
-        // Если изменений нет, рисуем оригинал
+        // Если изменений нет
         if (!levelsLUTs && isDefaultChannels) {
-            const canvas = canvasRef.current;
-            canvas.width = imageData.width;
-            canvas.height = imageData.height;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.putImageData(imageData, 0, 0);
-                hasBeenFilteredRef.current = false;
+            // Рисуем только если до этого были фильтры (сброс состояния)
+            if (hasBeenFilteredRef.current) {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    // Важно: не меняем canvas.width без нужды, чтобы не вызывать мерцание
+                    ctx.putImageData(imageData, 0, 0);
+                    hasBeenFilteredRef.current = false;
+                }
             }
             return;
         }
 
         const canvas = canvasRef.current;
-        canvas.width = imageData.width;
-        canvas.height = imageData.height;
-
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            // Используем постоянный буфер вместо создания нового массива каждый раз
+            // Применяем фильтры в буфер
             const processedData = applyImageFilters(
                 imageData, 
                 activeChannels, 
                 isGrayscale,
                 levelsLUTs as any,
-                targetDataRef.current! // Передаем буфер
+                targetDataRef.current!
             );
             
             ctx.putImageData(processedData, 0, 0);

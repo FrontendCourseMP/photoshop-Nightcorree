@@ -45,7 +45,12 @@ function App() {
     setPickedColor(null);
     setOriginalImageData(imageData);
     setPreviewLUTs(null);
-    setThumbnailImageData(createThumbnail(imageData, 48, 48));
+    
+    // ПЕРФОРМАНС: Генерируем миниатюру в фоне, чтобы не блокировать UI
+    // Это позволяет сразу отобразить основную картинку и оставить интерфейс отзывчивым
+    setTimeout(() => {
+        setThumbnailImageData(createThumbnail(imageData, 48, 48));
+    }, 100);
   }, []);
 
   const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
