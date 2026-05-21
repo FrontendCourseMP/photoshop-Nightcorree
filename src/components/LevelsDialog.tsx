@@ -1,153 +1,297 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { calculateHistogram } from '../utils/imageUtils';
+import { calculateHistogram, generateLevelsLUT } from '../utils/imageUtils';
+
+interface LevelSettings {
+    black: number;
+    white: number;
+    gamma: number;
+}
 
 interface LevelsDialogProps {
     isOpen: boolean;
     onClose: () => void;
-    onApply: () => void;
+    onApply: (luts: Record<string, Uint8Array>) => void;
+    onPreview: (luts: Record<string, Uint8Array> | null) => void;
     originalImageData: ImageData | null;
     isGrayscale: boolean;
 }
 
 type LevelsChannel = 'master' | 'r' | 'g' | 'b' | 'a';
 
-export function LevelsDialog({ isOpen, onClose, onApply, originalImageData, isGrayscale }: LevelsDialogProps) {
+const DEFAULT_LEVELS: LevelSettings = { black: 0, white: 255, gamma: 1.0 };
+const DEFAULT_LEVELS_GS: LevelSettings = { black: 0, white: 127, gamma: 1.0 };
+
+export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImageData, isGrayscale }: LevelsDialogProps) {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const sliderRef = useRef<HTMLDivElement>(null);
     
     const [selectedChannel, setSelectedChannel] = useState<LevelsChannel>('master');
     const [isLogarithmic, setIsLogarithmic] = useState(false);
+    const [isPreviewEnabled, setIsPreviewEnabled] = useState(true);
+    const [independentChannels, setIndependentChannels] = useState(false);
 
-    // Управление диалогом через нативный API
+    const initialSettings = useMemo(() => ({
+        master: isGrayscale ? { ...DEFAULT_LEVELS_GS } : { ...DEFAULT_LEVELS },
+        r: isGrayscale ? { ...DEFAULT_LEVELS_GS } : { ...DEFAULT_LEVELS },
+        g: { ...DEFAULT_LEVELS },
+        b: { ...DEFAULT_LEVELS },
+        a: { ...DEFAULT_LEVELS }
+    }), [isGrayscale]);
+
+    const [settings, setSettings] = useState(initialSettings);
+
+    const current = settings[selectedChannel];
+    const maxVal = (selectedChannel === 'master' || selectedChannel === 'r') && isGrayscale ? 127 : 255;
+
+    // Сброс настроек при открытии диалога
+    useEffect(() => {
+        if (isOpen) {
+            setSettings(initialSettings);
+        }
+    }, [isOpen, initialSettings]);
+
+    // Расчет LUT
+    const currentLUTs = useMemo(() => {
+        const luts: Record<string, Uint8Array> = {};
+        const channels: LevelsChannel[] = ['master', 'r', 'g', 'b', 'a'];
+        
+        channels.forEach(ch => {
+            const s = settings[ch];
+            const m = (ch === 'master' || ch === 'r') && isGrayscale ? 127 : 255;
+            luts[ch] = generateLevelsLUT(s.black, s.white, s.gamma, m);
+        });
+
+        return {
+            r: combineLUTs(luts.master, luts.r),
+            g: isGrayscale ? luts.master : combineLUTs(luts.master, luts.g),
+            b: isGrayscale ? luts.master : combineLUTs(luts.master, luts.b),
+            a: luts.a
+        };
+    }, [settings, isGrayscale]);
+
+    useEffect(() => {
+        if (isOpen && isPreviewEnabled) onPreview(currentLUTs); else onPreview(null);
+    }, [isOpen, isPreviewEnabled, currentLUTs, onPreview]);
+
+    const handleLevelChange = (key: keyof LevelSettings, value: number) => {
+        setSettings(prev => {
+            const curr = prev[selectedChannel];
+            let next = { ...curr, [key]: value };
+
+            if (key === 'black' && next.black >= next.white) next.black = next.white - 1;
+            if (key === 'white' && next.white <= next.black) next.white = next.black + 1;
+
+            return { ...prev, [selectedChannel]: next };
+        });
+    };
+
+    const handleReset = () => {
+        setSettings(prev => ({
+            ...prev,
+            [selectedChannel]: (selectedChannel === 'master' || selectedChannel === 'r') && isGrayscale 
+                ? { ...DEFAULT_LEVELS_GS } : { ...DEFAULT_LEVELS }
+        }));
+    };
+
+    const handleCancel = () => {
+        onPreview(null);
+        onClose();
+    };
+
     useEffect(() => {
         const dialog = dialogRef.current;
         if (!dialog) return;
-        
-        if (isOpen) {
-            dialog.showModal();
-        } else {
-            dialog.close();
-        }
+        if (isOpen) dialog.showModal(); else dialog.close();
     }, [isOpen]);
 
-    // Расчет гистограммы
     const histogramData = useMemo(() => {
         if (!originalImageData) return [];
         return calculateHistogram(originalImageData, selectedChannel, isGrayscale);
     }, [originalImageData, selectedChannel, isGrayscale]);
 
-    // Отрисовка гистограммы на канвасе
+    // Отрисовка гистограммы
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas || histogramData.length === 0) return;
-        
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const width = canvas.width;
-        const height = canvas.height;
+        const { width, height } = canvas;
         const maxCount = Math.max(...histogramData);
-        
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#666';
-        
+        ctx.fillStyle = '#444c56';
         const barWidth = width / histogramData.length;
         
         for (let i = 0; i < histogramData.length; i++) {
             const count = histogramData[i];
-            let barHeight = 0;
-            
-            if (count > 0) {
-                if (isLogarithmic) {
-                    barHeight = (Math.log(count) / Math.log(maxCount)) * height;
-                } else {
-                    barHeight = (count / maxCount) * height;
-                }
-            }
-            
+            if (count <= 0) continue;
+            const barHeight = isLogarithmic 
+                ? (Math.log(count) / Math.log(maxCount)) * height 
+                : (count / maxCount) * height;
             ctx.fillRect(i * barWidth, height - barHeight, barWidth, barHeight);
         }
     }, [histogramData, isLogarithmic]);
 
+    // Логика кастомного слайдера
+    const handleSliderMouseDown = (_e: React.MouseEvent, type: 'black' | 'white' | 'gamma') => {
+        const track = sliderRef.current;
+        if (!track) return;
+
+        const rect = track.getBoundingClientRect();
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            const currentX = moveEvent.clientX - rect.left;
+            const ratio = Math.max(0, Math.min(1, currentX / rect.width));
+            
+            if (type === 'gamma') {
+                const bRatio = current.black / maxVal;
+                const wRatio = current.white / maxVal;
+                const clampedRatio = Math.max(bRatio + 0.01, Math.min(wRatio - 0.01, ratio));
+                const relativePos = (clampedRatio - bRatio) / (wRatio - bRatio);
+                const newGamma = Math.pow(9.9, (0.5 - relativePos) * 2);
+                handleLevelChange('gamma', Math.round(newGamma * 100) / 100);
+            } else {
+                let newVal = Math.round(ratio * maxVal);
+                handleLevelChange(type, newVal);
+            }
+        };
+
+        const handleMouseUp = () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+    };
+
+    // Вычисляем визуальную позицию маркера гаммы для стилей
+    const gammaPosRatio = useMemo(() => {
+        const b = current.black / maxVal;
+        const w = current.white / maxVal;
+        const relativePos = 0.5 - (Math.log(current.gamma) / (2 * Math.log(9.9)));
+        const clampedRelative = Math.max(0.01, Math.min(0.99, relativePos));
+        return b + clampedRelative * (w - b);
+    }, [current.black, current.white, current.gamma, maxVal]);
+
     return (
         <dialog 
             ref={dialogRef}
-            className="bg-editor-panel text-editor-text border border-editor-border rounded-lg shadow-2xl p-0 backdrop:bg-black/50 overflow-hidden"
-            onClose={onClose}
+            className="bg-editor-panel text-editor-text border border-editor-border rounded-lg shadow-2xl p-0 backdrop:bg-black/60 overflow-hidden outline-none select-none"
+            onClose={handleCancel}
         >
-            <div className="w-[500px] flex flex-col">
+            <div className="w-[520px] flex flex-col font-sans">
                 {/* Header */}
-                <div className="p-4 border-b border-editor-border flex justify-between items-center bg-white/5">
-                    <h2 className="font-bold text-sm uppercase tracking-wider">Уровни (Levels)</h2>
-                    <button onClick={onClose} className="text-editor-text/50 hover:text-white">✕</button>
+                <div className="p-4 flex justify-between items-center border-b border-editor-border bg-white/5">
+                    <h2 className="text-xs font-bold uppercase tracking-widest opacity-80">Коррекция уровней</h2>
+                    <button onClick={handleCancel} className="text-editor-text/40 hover:text-white transition-colors cursor-pointer">✕</button>
                 </div>
 
-                {/* Body */}
+                {/* Content */}
                 <div className="p-6 flex flex-col gap-6">
-                    {/* Channel Selector */}
+                    {/* Channel Select */}
                     <div className="flex items-center gap-4">
-                        <label className="text-xs opacity-70">Канал:</label>
+                        <label className="text-[10px] uppercase font-bold text-editor-text/60">Выбор канала:</label>
                         <select 
                             value={selectedChannel}
                             onChange={(e) => setSelectedChannel(e.target.value as LevelsChannel)}
-                            className="bg-black/40 border border-editor-border rounded px-2 py-1 text-xs outline-none"
+                            className="flex-1 bg-[#0d1117] border border-editor-border rounded px-3 py-2 text-xs text-white outline-none focus:border-editor-accent transition-colors cursor-pointer"
                         >
-                            <option value="master">{isGrayscale ? 'Композитный (Gray)' : 'Композитный (RGB)'}</option>
-                            <option value="r">{isGrayscale ? 'Серый (Gray)' : 'Красный (Red)'}</option>
-                            {!isGrayscale && <option value="g">Зеленый (Green)</option>}
-                            {!isGrayscale && <option value="b">Синий (Blue)</option>}
-                            <option value="a">Альфа (Alpha)</option>
+                            <option value="master" className="bg-editor-panel text-white">{isGrayscale ? 'Композитный (Серый)' : 'Композитный (RGB)'}</option>
+                            <option value="r" className="bg-editor-panel text-white">{isGrayscale ? 'Серый канал' : 'Красный канал'}</option>
+                            {!isGrayscale && <option value="g" className="bg-editor-panel text-white">Зеленый канал</option>}
+                            {!isGrayscale && <option value="b" className="bg-editor-panel text-white">Синий канал</option>}
+                            <option value="a" className="bg-editor-panel text-white">Альфа-канал</option>
                         </select>
+                    </div>
 
-                        <div className="ml-auto flex items-center gap-2">
-                            <input 
-                                type="checkbox" 
-                                id="logScale"
-                                checked={isLogarithmic}
-                                onChange={(e) => setIsLogarithmic(e.target.checked)}
-                            />
-                            <label htmlFor="logScale" className="text-xs cursor-pointer select-none">Логарифмическая шкала</label>
+                    {/* Histogram & Slider Area */}
+                    <div className="flex flex-col gap-0">
+                        <div className="bg-black/40 border border-editor-border border-b-0 rounded-t-lg p-1 h-[180px]">
+                            <canvas ref={canvasRef} width={470} height={170} className="w-full h-full opacity-90" />
+                        </div>
+                        
+                        {/* Custom Slider Track */}
+                        <div ref={sliderRef} className="relative h-5 bg-gradient-to-r from-black to-white border border-editor-border border-t-0 shadow-inner">
+                            {/* Black Marker */}
+                            <div 
+                                onMouseDown={(e) => handleSliderMouseDown(e, 'black')}
+                                className="absolute top-full -translate-y-1/2 -translate-x-1/2 cursor-ew-resize z-10"
+                                style={{ left: `${(current.black / maxVal) * 100}%` }}
+                            >
+                                <div className="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-b-[12px] border-b-black drop-shadow-md" />
+                            </div>
+                            {/* White Marker */}
+                            <div 
+                                onMouseDown={(e) => handleSliderMouseDown(e, 'white')}
+                                className="absolute top-full -translate-y-1/2 -translate-x-1/2 cursor-ew-resize z-10"
+                                style={{ left: `${(current.white / maxVal) * 100}%` }}
+                            >
+                                <div className="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-b-[12px] border-b-white drop-shadow-md" />
+                            </div>
+                            {/* Gamma Marker */}
+                            <div 
+                                onMouseDown={(e) => handleSliderMouseDown(e, 'gamma')}
+                                className="absolute top-full -translate-y-1/2 -translate-x-1/2 cursor-ew-resize z-20"
+                                style={{ left: `${gammaPosRatio * 100}%` }}
+                            >
+                                <div className="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-b-[12px] border-b-editor-text/60 drop-shadow-md" />
+                            </div>
+                        </div>
+
+                        {/* Values Display */}
+                        <div className="flex justify-between items-center mt-8 px-1 text-[10px] font-bold text-editor-text/40 uppercase tracking-tighter">
+                            <div className="flex flex-col items-center gap-1">
+                                <span>Тени (Black)</span>
+                                <span className="text-editor-text text-sm font-mono">{current.black}</span>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <span>Гамма (Mid)</span>
+                                <input 
+                                    type="number" step="0.01" min="0.1" max="9.9"
+                                    value={current.gamma}
+                                    onChange={(e) => handleLevelChange('gamma', parseFloat(e.target.value) || 1.0)}
+                                    className="bg-black/20 border-b border-editor-accent/30 w-12 text-center text-editor-accent text-sm outline-none focus:border-editor-accent"
+                                />
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <span>Света (White)</span>
+                                <span className="text-editor-text text-sm font-mono">{current.white}</span>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Histogram Canvas Container */}
-                    <div className="relative bg-black/40 border border-editor-border rounded p-2 overflow-hidden">
-                        <canvas 
-                            ref={canvasRef} 
-                            width={400} 
-                            height={200} 
-                            className="w-full h-[200px]"
-                        />
-                    </div>
-
-                    {/* Placeholder for Sliders (Part 2) */}
-                    <div className="h-20 flex items-center justify-center border border-dashed border-editor-border rounded opacity-30 text-[10px] uppercase">
-                        Слайдеры уровней будут здесь (Часть 2)
+                    {/* Checkboxes */}
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                            <input type="checkbox" checked={isPreviewEnabled} onChange={(e) => setIsPreviewEnabled(e.target.checked)} className="w-4 h-4 rounded accent-editor-accent" />
+                            <span className="text-xs group-hover:text-white transition-colors">Предпросмотр</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                            <input type="checkbox" checked={isLogarithmic} onChange={(e) => setIsLogarithmic(e.target.checked)} className="w-4 h-4 rounded accent-editor-accent" />
+                            <span className="text-xs group-hover:text-white transition-colors">Логарифм. гистограмма</span>
+                        </label>
                     </div>
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 bg-black/20 border-t border-editor-border flex gap-3 justify-end">
-                    <button 
-                        onClick={onClose}
-                        className="px-4 py-2 text-xs rounded hover:bg-white/5 transition-colors"
-                    >
-                        Отмена
-                    </button>
-                    <button 
-                        onClick={() => {}} // Reset (Part 2)
-                        className="px-4 py-2 text-xs rounded border border-editor-border hover:bg-white/5 transition-colors"
-                    >
-                        Сбросить
-                    </button>
-                    <button 
-                        onClick={onApply}
-                        className="px-6 py-2 text-xs rounded bg-editor-accent text-white font-bold hover:brightness-110 transition-all"
-                    >
-                        Применить
-                    </button>
+                <div className="p-4 bg-black/20 border-t border-editor-border flex justify-between items-center">
+                    <button onClick={handleReset} className="px-5 py-2 text-xs font-bold rounded border border-editor-border hover:bg-white/5 transition-colors cursor-pointer">Сбросить всё</button>
+                    <div className="flex gap-3">
+                        <button onClick={handleCancel} className="px-5 py-2 text-xs font-bold rounded hover:bg-white/5 transition-colors cursor-pointer">Отмена</button>
+                        <button onClick={() => onApply(currentLUTs)} className="px-8 py-2 text-xs rounded bg-editor-accent text-white font-black uppercase tracking-wider hover:brightness-110 shadow-lg shadow-editor-accent/20 transition-all cursor-pointer">Применить</button>
+                    </div>
                 </div>
             </div>
         </dialog>
     );
+}
+
+function combineLUTs(master: Uint8Array, channel: Uint8Array): Uint8Array {
+    const result = new Uint8Array(master.length);
+    for (let i = 0; i < master.length; i++) {
+        result[i] = channel[master[i]];
+    }
+    return result;
 }

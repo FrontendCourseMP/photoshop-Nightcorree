@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { decodeGB7 } from '../utils/gb7Codec';
-import { applyChannels, rgbToLab } from '../utils/imageUtils';
+import { applyChannels, rgbToLab, applyLevelsLUT } from '../utils/imageUtils';
 import type { ChannelState } from './ChannelPanel';
 import type { EditorTool } from './Toolbar';
 import type { ColorInfo } from '../App';
@@ -18,9 +18,10 @@ interface WorkspaceProps {
     activeTool: EditorTool;
     onColorPicked: (info: ColorInfo) => void;
     imageMeta: ImageMeta | null;
+    levelsLUTs: Record<string, Uint8Array> | null;
 }
 
-export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked, imageMeta }: WorkspaceProps) {
+export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked, imageMeta, levelsLUTs }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null);
 
@@ -96,7 +97,7 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
 
     }, [file, onImageLoaded]);
 
-    // 3. Логика отрисовки при изменении каналов или оригинальных данных
+    // 3. Логика отрисовки при изменении каналов, LUT или оригинальных данных
     useEffect(() => {
         if (!originalImageData || !canvasRef.current) return;
 
@@ -107,11 +108,24 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
         const ctx = canvas.getContext('2d');
         if (ctx) {
             const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
-            const filteredData = applyChannels(originalImageData, activeChannels, isGrayscale);
+            
+            // 1. Применяем Уровни (LUT), если они есть (предпросмотр)
+            let processedData = originalImageData;
+            if (levelsLUTs) {
+                processedData = applyLevelsLUT(
+                    originalImageData, 
+                    levelsLUTs as any,
+                    isGrayscale
+                );
+            }
+
+            // 2. Применяем Маску Каналов
+            const filteredData = applyChannels(processedData, activeChannels, isGrayscale);
+            
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.putImageData(filteredData, 0, 0);
         }
-    }, [originalImageData, activeChannels, imageMeta]);
+    }, [originalImageData, activeChannels, imageMeta, levelsLUTs]);
 
     // 4. Логика пипетки
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

@@ -23,6 +23,8 @@ function App() {
   const [activeTool, setActiveTool] = useState<EditorTool>('hand');
   const [pickedColor, setPickedColor] = useState<ColorInfo | null>(null);
   const [isLevelsOpen, setIsLevelsOpen] = useState(false);
+  
+  const [previewLUTs, setPreviewLUTs] = useState<Record<string, Uint8Array> | null>(null);
 
   const [channels, setChannels] = useState<ChannelState>({
     r: true,
@@ -42,13 +44,13 @@ function App() {
     setImageMeta(meta);
     setPickedColor(null);
     setOriginalImageData(imageData);
+    setPreviewLUTs(null);
     setThumbnailImageData(createThumbnail(imageData, 48, 48));
   }, []);
 
   const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
 
-  const handleApplyLevels = () => {
-    // Будет реализовано в Части 3
+  const handleApplyLevels = (_luts: Record<string, Uint8Array>) => {
     setIsLevelsOpen(false);
   };
 
@@ -77,6 +79,7 @@ function App() {
             activeTool={activeTool}
             onColorPicked={setPickedColor}
             imageMeta={imageMeta}
+            levelsLUTs={previewLUTs}
           />
         </div>
         <ChannelPanel 
@@ -101,6 +104,7 @@ function App() {
         isOpen={isLevelsOpen}
         onClose={() => setIsLevelsOpen(false)}
         onApply={handleApplyLevels}
+        onPreview={setPreviewLUTs}
         originalImageData={originalImageData}
         isGrayscale={isGrayscale}
       />

@@ -99,7 +99,6 @@ export function getChannelPreview(thumbnail: ImageData, channel: keyof ChannelSt
  * Использует стандартный осветитель D65.
  */
 export function rgbToLab(r: number, g: number, b: number): { l: number; a: number; b: number } {
-    // 1. Нормализация и перевод в линейный RGB (sRGB -> XYZ)
     let nr = r / 255;
     let ng = g / 255;
     let nb = b / 255;
@@ -112,13 +111,10 @@ export function rgbToLab(r: number, g: number, b: number): { l: number; a: numbe
     ng *= 100;
     nb *= 100;
 
-    // 2. Linear RGB -> XYZ (D65)
     const x = nr * 0.4124 + ng * 0.3576 + nb * 0.1805;
     const y = nr * 0.2126 + ng * 0.7152 + nb * 0.0722;
     const z = nr * 0.0193 + ng * 0.1192 + nb * 0.9505;
 
-    // 3. XYZ -> CIELAB
-    // Точка белого D65: X=95.047, Y=100.0, Z=108.883
     const xn = 95.047;
     const yn = 100.000;
     const zn = 108.883;
@@ -137,8 +133,65 @@ export function rgbToLab(r: number, g: number, b: number): { l: number; a: numbe
         b: Math.round(lb * 100) / 100 
     };
 }
+
 function f(t: number): number {
     return t > Math.pow(6 / 29, 3) ? Math.pow(t, 1 / 3) : (1 / 3) * Math.pow(29 / 6, 2) * t + 4 / 29;
+}
+
+/**
+ * Генерирует таблицу подстановки (LUT) для коррекции уровней.
+ */
+export function generateLevelsLUT(black: number, white: number, gamma: number, max: number): Uint8Array {
+    const lut = new Uint8Array(max + 1);
+    const range = white - black;
+
+    for (let i = 0; i <= max; i++) {
+        if (i <= black) {
+            lut[i] = 0;
+        } else if (i >= white) {
+            lut[i] = max;
+        } else {
+            const normalized = (i - black) / range;
+            lut[i] = Math.round(Math.pow(normalized, 1 / gamma) * max);
+        }
+    }
+    return lut;
+}
+
+/**
+ * Применяет наборы LUT к ImageData.
+ */
+export function applyLevelsLUT(
+    original: ImageData, 
+    luts: { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array },
+    isGrayscale: boolean
+): ImageData {
+    const { width, height, data } = original;
+    const output = new ImageData(new Uint8ClampedArray(data), width, height);
+    const oData = output.data;
+
+    for (let i = 0; i < oData.length; i += 4) {
+        if (isGrayscale) {
+            if (luts.r.length === 128) {
+                const val = Math.min(127, Math.floor(oData[i] / 2));
+                const newVal = luts.r[val] * 2;
+                oData[i] = newVal;
+                oData[i + 1] = newVal;
+                oData[i + 2] = newVal;
+            } else {
+                oData[i] = luts.r[oData[i]];
+                oData[i + 1] = luts.r[oData[i + 1]];
+                oData[i + 2] = luts.r[oData[i + 2]];
+            }
+        } else {
+            oData[i] = luts.r[oData[i]];
+            oData[i + 1] = luts.g[oData[i + 1]];
+            oData[i + 2] = luts.b[oData[i + 2]];
+        }
+        oData[i + 3] = luts.a[oData[i + 3]];
+    }
+
+    return output;
 }
 
 /**
@@ -159,9 +212,8 @@ export function calculateHistogram(imageData: ImageData, channel: 'master' | 'r'
 
         if (channel === 'master') {
             if (isGrayscale) {
-                value = r; // В GB7 r=g=b
+                value = r;
             } else {
-                // Формула светимости (luminance)
                 value = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
             }
         } else if (channel === 'r') value = r;
@@ -169,11 +221,6 @@ export function calculateHistogram(imageData: ImageData, channel: 'master' | 'r'
         else if (channel === 'b') value = b;
         else if (channel === 'a') value = a;
 
-        // Коррекция для GB7 (если данные в 0-255, а нам нужно 0-127)
-        // Но наш декодер GB7 уже возвращает данные в 0-255 (gray8).
-        // Однако в задании сказано про 0-127. 
-        // Если изображение GB7, то мы будем использовать 128 корзин, 
-        // но значения у нас 0-255. Значит делим на 2.
         if (isGrayscale) {
             histogram[Math.min(127, Math.floor(value / 2))]++;
         } else {
