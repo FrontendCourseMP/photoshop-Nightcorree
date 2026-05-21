@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { decodeGB7 } from '../utils/gb7Codec';
-import { applyChannels } from '../utils/imageUtils';
+import { applyChannels, rgbToLab } from '../utils/imageUtils';
 import type { ChannelState } from './ChannelPanel';
+import type { EditorTool } from './Toolbar';
+import type { ColorInfo } from '../App';
 
 export interface ImageMeta {
     width: number;
@@ -13,9 +15,11 @@ interface WorkspaceProps {
     file: File | null;
     onImageLoaded: (meta: ImageMeta, imageData: ImageData) => void;
     activeChannels: ChannelState;
+    activeTool: EditorTool;
+    onColorPicked: (info: ColorInfo) => void;
 }
 
-export function Workspace({ file, onImageLoaded, activeChannels }: WorkspaceProps) {
+export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null);
 
@@ -107,11 +111,40 @@ export function Workspace({ file, onImageLoaded, activeChannels }: WorkspaceProp
         }
     }, [originalImageData, activeChannels]);
 
+    // 4. Логика пипетки
+    const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (activeTool !== 'eyedropper' || !originalImageData || !canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+
+        // Вычисляем масштаб (реальные пиксели / CSS пиксели)
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        // Координаты клика относительно начала холста
+        const x = Math.floor((e.clientX - rect.left) * scaleX);
+        const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+        // Проверка границ (на всякий случай)
+        if (x >= 0 && x < originalImageData.width && y >= 0 && y < originalImageData.height) {
+            const idx = (y * originalImageData.width + x) * 4;
+            const r = originalImageData.data[idx];
+            const g = originalImageData.data[idx + 1];
+            const b = originalImageData.data[idx + 2];
+            
+            const lab = rgbToLab(r, g, b);
+
+            onColorPicked({ x, y, r, g, b, lab });
+        }
+    };
+
     return (
         <div className="w-full h-full bg-editor-bg flex items-center justify-center overflow-hidden p-12">
             <canvas
                 ref={canvasRef}
-                className="shadow-2xl border border-editor-border bg-checkerboard"
+                onClick={handleCanvasClick}
+                className={`shadow-2xl border border-editor-border bg-checkerboard ${activeTool === 'eyedropper' ? 'cursor-crosshair' : 'cursor-default'}`}
                 style={{
                     maxWidth: '100%',
                     maxHeight: '100%',

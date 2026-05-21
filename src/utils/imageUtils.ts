@@ -47,7 +47,6 @@ export function createThumbnail(original: ImageData, maxW: number = 100, maxH: n
 
 /**
  * Извлекает конкретный канал и возвращает ImageData в оттенках серого.
- * Теперь работает быстро, так как принимает уже уменьшенную копию.
  */
 export function getChannelPreview(thumbnail: ImageData, channel: keyof ChannelState): ImageData {
     const { width, height, data } = thumbnail;
@@ -68,4 +67,52 @@ export function getChannelPreview(thumbnail: ImageData, channel: keyof ChannelSt
     }
 
     return preview;
+}
+
+/**
+ * Конвертирует RGB в CIELAB.
+ * Использует стандартный осветитель D65.
+ */
+export function rgbToLab(r: number, g: number, b: number): { l: number; a: number; b: number } {
+    // 1. Нормализация и перевод в линейный RGB (sRGB -> XYZ)
+    let nr = r / 255;
+    let ng = g / 255;
+    let nb = b / 255;
+
+    nr = nr > 0.04045 ? Math.pow((nr + 0.055) / 1.055, 2.4) : nr / 12.92;
+    ng = ng > 0.04045 ? Math.pow((ng + 0.055) / 1.055, 2.4) : ng / 12.92;
+    nb = nb > 0.04045 ? Math.pow((nb + 0.055) / 1.055, 2.4) : nb / 12.92;
+
+    nr *= 100;
+    ng *= 100;
+    nb *= 100;
+
+    // 2. Linear RGB -> XYZ (D65)
+    const x = nr * 0.4124 + ng * 0.3576 + nb * 0.1805;
+    const y = nr * 0.2126 + ng * 0.7152 + nb * 0.0722;
+    const z = nr * 0.0193 + ng * 0.1192 + nb * 0.9505;
+
+    // 3. XYZ -> CIELAB
+    // Точка белого D65: X=95.047, Y=100.0, Z=108.883
+    const xn = 95.047;
+    const yn = 100.000;
+    const zn = 108.883;
+
+    const fx = f(x / xn);
+    const fy = f(y / yn);
+    const fz = f(z / zn);
+
+    const l = 116 * fy - 16;
+    const la = 500 * (fx - fy);
+    const lb = 200 * (fy - fz);
+
+    return { 
+        l: Math.round(l * 100) / 100, 
+        a: Math.round(la * 100) / 100, 
+        b: Math.round(lb * 100) / 100 
+    };
+}
+
+function f(t: number): number {
+    return t > Math.pow(6 / 29, 3) ? Math.pow(t, 1 / 3) : (1 / 3) * Math.pow(29 / 6, 2) * t + 4 / 29;
 }

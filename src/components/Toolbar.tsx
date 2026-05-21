@@ -1,12 +1,16 @@
 import { useRef } from 'react';
-import { Upload, Download, Image as ImageIcon } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, MousePointer2, Pipette } from 'lucide-react';
 import { encodeGB7 } from '../utils/gb7Codec';
+
+export type EditorTool = 'hand' | 'eyedropper';
 
 interface ToolbarProps {
   onFileSelect: (file: File) => void;
+  activeTool: EditorTool;
+  onToolChange: (tool: EditorTool) => void;
 }
 
-export function Toolbar({ onFileSelect }: ToolbarProps) {
+export function Toolbar({ onFileSelect, activeTool, onToolChange }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Симулируем клик по скрытому инпуту при нажатии на кнопку "Открыть"
@@ -67,6 +71,25 @@ export function Toolbar({ onFileSelect }: ToolbarProps) {
       
       <div className="h-6 w-[1px] bg-editor-border mx-2"></div>
       
+      <div className="flex items-center gap-1 bg-black/20 p-1 rounded-md">
+        <button 
+          onClick={() => onToolChange('hand')}
+          className={`p-1.5 rounded transition-colors ${activeTool === 'hand' ? 'bg-editor-accent text-white' : 'text-editor-text hover:bg-white/10'}`}
+          title="Инструмент «Рука»"
+        >
+          <MousePointer2 size={18} />
+        </button>
+        <button 
+          onClick={() => onToolChange('eyedropper')}
+          className={`p-1.5 rounded transition-colors ${activeTool === 'eyedropper' ? 'bg-editor-accent text-white' : 'text-editor-text hover:bg-white/10'}`}
+          title="Инструмент «Пипетка»"
+        >
+          <Pipette size={18} />
+        </button>
+      </div>
+
+      <div className="h-6 w-[1px] bg-editor-border mx-2"></div>
+
       {/* Скрытый инпут для выбора файлов */}
       <input 
         type="file" 
