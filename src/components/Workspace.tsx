@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { decodeGB7 } from '../utils/gb7Codec'; // <-- Импортируем наш декодер
+import { useEffect, useRef, useState } from 'react';
+import { decodeGB7 } from '../utils/gb7Codec';
+import { applyChannels } from '../utils/imageUtils';
+import type { ChannelState } from './ChannelPanel';
 
 export interface ImageMeta {
     width: number;
@@ -9,11 +11,13 @@ export interface ImageMeta {
 
 interface WorkspaceProps {
     file: File | null;
-    onImageLoaded: (meta: ImageMeta) => void;
+    onImageLoaded: (meta: ImageMeta, imageData: ImageData) => void;
+    activeChannels: ChannelState;
 }
 
-export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
+export function Workspace({ file, onImageLoaded, activeChannels }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null);
 
     // 1. Дефолтное состояние без файла
     useEffect(() => {
@@ -26,6 +30,7 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
             if (ctx) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
+            setOriginalImageData(null);
         }
     }, [file]);
 
@@ -41,33 +46,30 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
             reader.onload = (e) => {
                 const img = new Image();
                 img.onload = () => {
-                    const canvas = canvasRef.current;
-                    if (!canvas) return;
-
+                    const canvas = document.createElement('canvas');
                     canvas.width = img.width;
                     canvas.height = img.height;
-
                     const ctx = canvas.getContext('2d');
-                    if (ctx) {
-                        ctx.clearRect(0, 0, img.width, img.height);
-                        ctx.drawImage(img, 0, 0);
-                    }
+                    if (!ctx) return;
+                    
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, img.width, img.height);
 
                     const isJpeg = extension === 'jpg' || extension === 'jpeg';
                     const depth = isJpeg ? 24 : 32;
 
+                    setOriginalImageData(imageData);
                     onImageLoaded({ 
                         width: img.width, 
                         height: img.height, 
                         colorDepth: depth 
-                    });
+                    }, imageData);
                 };
                 img.src = e.target?.result as string;
             };
 
             reader.readAsDataURL(file);
         } else if (extension === 'gb7') {
-            // Новая логика для формата GB7
             file.arrayBuffer().then((buffer) => {
                 const result = decodeGB7(buffer);
                 
@@ -76,24 +78,12 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
                     return;
                 }
 
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-
-                // Устанавливаем размеры из декодированных данных
-                canvas.width = result.width;
-                canvas.height = result.height;
-
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.putImageData(result.imageData, 0, 0);
-                }
-
+                setOriginalImageData(result.imageData);
                 onImageLoaded({ 
                     width: result.width, 
                     height: result.height, 
                     colorDepth: result.colorDepth 
-                });
+                }, result.imageData);
             }).catch(err => {
                 console.error("Ошибка при чтении файла:", err);
             });
@@ -101,14 +91,30 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
 
     }, [file, onImageLoaded]);
 
+    // 3. Логика отрисовки при изменении каналов или оригинальных данных
+    useEffect(() => {
+        if (!originalImageData || !canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        canvas.width = originalImageData.width;
+        canvas.height = originalImageData.height;
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            const filteredData = applyChannels(originalImageData, activeChannels);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.putImageData(filteredData, 0, 0);
+        }
+    }, [originalImageData, activeChannels]);
+
     return (
-        <div className="w-full h-full bg-editor-bg flex items-center justify-center overflow-hidden">
+        <div className="w-full h-full bg-editor-bg flex items-center justify-center overflow-hidden p-12">
             <canvas
                 ref={canvasRef}
                 className="shadow-2xl border border-editor-border bg-checkerboard"
                 style={{
-                    maxWidth: 'calc(100% - 96px)',
-                    maxHeight: 'calc(100% - 96px)',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
                     objectFit: 'contain'
                 }}
             />
