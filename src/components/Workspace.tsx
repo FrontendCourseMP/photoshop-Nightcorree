@@ -60,28 +60,55 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
                     return;
                 }
 
-                const canvas = document.createElement('canvas');
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
                 canvas.width = img.width;
                 canvas.height = img.height;
                 const ctx = canvas.getContext('2d');
-                if (!ctx) return;
-                
-                ctx.drawImage(img, 0, 0);
-                const loadedData = ctx.getImageData(0, 0, img.width, img.height);
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0);
+                }
 
-                // Инициализируем буфер один раз при загрузке
-                targetDataRef.current = new ImageData(img.width, img.height);
+                // Фоновое извлечение данных, чтобы не блокировать UI-поток при загрузке
+                setTimeout(() => {
+                    if (isCancelled) return;
+                    
+                    const tempC = document.createElement('canvas');
+                    tempC.width = img.width;
+                    tempC.height = img.height;
+                    const tctx = tempC.getContext('2d');
+                    tctx?.drawImage(img, 0, 0);
+                    const loadedData = tctx!.getImageData(0, 0, img.width, img.height);
 
-                const isJpeg = extension === 'jpg' || extension === 'jpeg';
-                onImageLoaded({ 
-                    width: img.width, 
-                    height: img.height, 
-                    colorDepth: isJpeg ? 24 : 32,
-                    hasAlpha: !isJpeg
-                }, loadedData);
+                    // Инициализируем буфер один раз при загрузке
+                    targetDataRef.current = new ImageData(img.width, img.height);
 
-                URL.revokeObjectURL(objectUrl);
-                img.onload = null;
+                    const isJpeg = extension === 'jpg' || extension === 'jpeg';
+                    
+                    // УМНАЯ ПРОВЕРКА АЛЬФЫ:
+                    // Если это не JPEG, проверяем, есть ли реально прозрачные пиксели.
+                    let hasRealAlpha = false;
+                    if (!isJpeg) {
+                        const data = loadedData.data;
+                        for (let i = 3; i < data.length; i += 4) {
+                            if (data[i] < 255) {
+                                hasRealAlpha = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    onImageLoaded({ 
+                        width: img.width, 
+                        height: img.height, 
+                        colorDepth: isJpeg ? 24 : 32,
+                        hasAlpha: hasRealAlpha
+                    }, loadedData);
+
+                    URL.revokeObjectURL(objectUrl);
+                    img.onload = null;
+                }, 50);
             };
 
             img.src = objectUrl;
