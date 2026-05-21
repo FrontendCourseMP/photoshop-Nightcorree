@@ -69,9 +69,9 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
         } else if (extension === 'gb7') {
             // Новая логика для формата GB7
             file.arrayBuffer().then((buffer) => {
-                const imageData = decodeGB7(buffer);
+                const result = decodeGB7(buffer);
                 
-                if (!imageData) {
+                if (!result) {
                     alert("Ошибка: не удалось прочитать файл формата GB7.");
                     return;
                 }
@@ -80,19 +80,19 @@ export function Workspace({ file, onImageLoaded }: WorkspaceProps) {
                 if (!canvas) return;
 
                 // Устанавливаем размеры из декодированных данных
-                canvas.width = imageData.width;
-                canvas.height = imageData.height;
+                canvas.width = result.width;
+                canvas.height = result.height;
 
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.putImageData(imageData, 0, 0);
+                    ctx.putImageData(result.imageData, 0, 0);
                 }
 
                 onImageLoaded({ 
-                    width: imageData.width, 
-                    height: imageData.height, 
-                    colorDepth: 7 
+                    width: result.width, 
+                    height: result.height, 
+                    colorDepth: result.colorDepth 
                 });
             }).catch(err => {
                 console.error("Ошибка при чтении файла:", err);

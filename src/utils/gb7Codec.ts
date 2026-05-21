@@ -1,16 +1,26 @@
 // src/utils/gb7Codec.ts
 
 /**
- * Декодер: из бинарных данных в ImageData
+ * Результат декодирования GB7
  */
-export function decodeGB7(buffer: ArrayBuffer): ImageData | null {
+export interface GB7Result {
+    imageData: ImageData;
+    width: number;
+    height: number;
+    colorDepth: number;
+}
+
+/**
+ * Декодер: из бинарных данных в объект с ImageData и метаданными
+ */
+export function decodeGB7(buffer: ArrayBuffer): GB7Result | null {
     const view = new DataView(buffer);
     const bytes = new Uint8Array(buffer);
 
     // Проверка сигнатуры
     if (bytes[0] !== 0x47 || bytes[1] !== 0x42 || bytes[2] !== 0x37 || bytes[3] !== 0x1D) return null;
 
-    // Читаем версию и ПРОВЕРЯЕМ её (это исправит ошибку TypeScript)
+    // Читаем версию и ПРОВЕРЯЕМ её
     const version = bytes[4];
     if (version !== 0x01) {
         console.error("Неподдерживаемая версия формата GB7");
@@ -21,6 +31,7 @@ export function decodeGB7(buffer: ArrayBuffer): ImageData | null {
     const hasMask = (flags & 0x01) === 1;
     const width = view.getUint16(6, false);
     const height = view.getUint16(8, false);
+    const colorDepth = hasMask ? 8 : 7;
 
     const imageData = new ImageData(width, height);
     const pixelData = bytes.subarray(12, 12 + width * height);
@@ -38,7 +49,13 @@ export function decodeGB7(buffer: ArrayBuffer): ImageData | null {
         imageData.data[idx + 2] = gray8;
         imageData.data[idx + 3] = alpha;
     }
-    return imageData;
+
+    return {
+        imageData,
+        width,
+        height,
+        colorDepth
+    };
 }
 
 /**
@@ -46,6 +63,16 @@ export function decodeGB7(buffer: ArrayBuffer): ImageData | null {
  */
 export function encodeGB7(imageData: ImageData): ArrayBuffer {
     const { width, height, data } = imageData;
+    
+    // Определяем, нужна ли маска (есть ли хоть один прозрачный пиксель)
+    let hasTransparency = false;
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 255) {
+            hasTransparency = true;
+            break;
+        }
+    }
+
     // Размер: 12 байт заголовок + W*H байт данных
     const buffer = new ArrayBuffer(12 + width * height);
     const view = new DataView(buffer);
@@ -57,7 +84,7 @@ export function encodeGB7(imageData: ImageData): ArrayBuffer {
     bytes[2] = 0x37; // 7
     bytes[3] = 0x1D; // Разделитель
     bytes[4] = 0x01; // Версия
-    bytes[5] = 0x01; // Флаг: всегда ставим 1 (маска присутствует), чтобы поддерживать прозрачность
+    bytes[5] = hasTransparency ? 0x01 : 0x00; // Флаг маски
     view.setUint16(6, width, false);  // Ширина (Big-Endian)
     view.setUint16(8, height, false); // Высота (Big-Endian)
     view.setUint16(10, 0, false);     // Резерв
@@ -75,7 +102,11 @@ export function encodeGB7(imageData: ImageData): ArrayBuffer {
         const gray7 = Math.round((gray8 / 255) * 127);
 
         // Бит маски (Bit 7): 1 если непрозрачный, 0 если прозрачный
-        const maskBit = a >= 128 ? 1 : 0;
+        // Если флага маски нет, бит 7 должен быть 0 (по спецификации)
+        let maskBit = 0;
+        if (hasTransparency) {
+            maskBit = a >= 128 ? 1 : 0;
+        }
 
         // Собираем байт: [Маска (1 бит)] [Серый (7 бит)]
         bytes[12 + i] = (maskBit << 7) | (gray7 & 0x7F);
