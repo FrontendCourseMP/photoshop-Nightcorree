@@ -3,6 +3,7 @@ import { Toolbar, type EditorTool } from './components/Toolbar';
 import { Workspace, type ImageMeta } from './components/Workspace';
 import { StatusBar } from './components/StatusBar';
 import { ChannelPanel, type ChannelState } from './components/ChannelPanel';
+import { LevelsDialog } from './components/LevelsDialog';
 import { createThumbnail } from './utils/imageUtils';
 
 export interface ColorInfo {
@@ -17,9 +18,11 @@ export interface ColorInfo {
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null);
+  const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null);
   const [thumbnailImageData, setThumbnailImageData] = useState<ImageData | null>(null);
   const [activeTool, setActiveTool] = useState<EditorTool>('hand');
   const [pickedColor, setPickedColor] = useState<ColorInfo | null>(null);
+  const [isLevelsOpen, setIsLevelsOpen] = useState(false);
 
   const [channels, setChannels] = useState<ChannelState>({
     r: true,
@@ -38,10 +41,16 @@ function App() {
   const handleImageLoaded = useCallback((meta: ImageMeta, imageData: ImageData) => {
     setImageMeta(meta);
     setPickedColor(null);
+    setOriginalImageData(imageData);
     setThumbnailImageData(createThumbnail(imageData, 48, 48));
   }, []);
 
   const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
+
+  const handleApplyLevels = () => {
+    // Будет реализовано в Части 3
+    setIsLevelsOpen(false);
+  };
 
   return (
     // Корневой контейнер: жестко 100% высоты и ширины, скрываем глобальный скролл
@@ -53,6 +62,8 @@ function App() {
           onFileSelect={setSelectedFile} 
           activeTool={activeTool}
           onToolChange={setActiveTool}
+          onOpenLevels={() => setIsLevelsOpen(true)}
+          hasImage={!!imageMeta}
         />
       </div>
       
@@ -85,6 +96,14 @@ function App() {
           pickedColor={pickedColor}
         />
       </div>
+
+      <LevelsDialog 
+        isOpen={isLevelsOpen}
+        onClose={() => setIsLevelsOpen(false)}
+        onApply={handleApplyLevels}
+        originalImageData={originalImageData}
+        isGrayscale={isGrayscale}
+      />
       
     </div>
   );

@@ -137,7 +137,49 @@ export function rgbToLab(r: number, g: number, b: number): { l: number; a: numbe
         b: Math.round(lb * 100) / 100 
     };
 }
-
 function f(t: number): number {
     return t > Math.pow(6 / 29, 3) ? Math.pow(t, 1 / 3) : (1 / 3) * Math.pow(29 / 6, 2) * t + 4 / 29;
+}
+
+/**
+ * Рассчитывает гистограмму для указанного канала или композитную.
+ * Возвращает массив частот.
+ */
+export function calculateHistogram(imageData: ImageData, channel: 'master' | 'r' | 'g' | 'b' | 'a', isGrayscale: boolean): number[] {
+    const { data } = imageData;
+    const maxVal = isGrayscale ? 128 : 256;
+    const histogram = new Array(maxVal).fill(0);
+
+    for (let i = 0; i < data.length; i += 4) {
+        let value = 0;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        if (channel === 'master') {
+            if (isGrayscale) {
+                value = r; // В GB7 r=g=b
+            } else {
+                // Формула светимости (luminance)
+                value = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+            }
+        } else if (channel === 'r') value = r;
+        else if (channel === 'g') value = g;
+        else if (channel === 'b') value = b;
+        else if (channel === 'a') value = a;
+
+        // Коррекция для GB7 (если данные в 0-255, а нам нужно 0-127)
+        // Но наш декодер GB7 уже возвращает данные в 0-255 (gray8).
+        // Однако в задании сказано про 0-127. 
+        // Если изображение GB7, то мы будем использовать 128 корзин, 
+        // но значения у нас 0-255. Значит делим на 2.
+        if (isGrayscale) {
+            histogram[Math.min(127, Math.floor(value / 2))]++;
+        } else {
+            histogram[Math.min(255, value)]++;
+        }
+    }
+
+    return histogram;
 }
