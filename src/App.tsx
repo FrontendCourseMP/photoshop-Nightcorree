@@ -56,7 +56,8 @@ function App() {
     // ПРОВЕРКА: Применяем уровни ко ВСЕМ каналам (все true), 
     // чтобы не "запекать" текущую видимость (например, скрытую Альфу) в данные навсегда.
     const allChannels: ChannelState = { r: true, g: true, b: true, a: true };
-    const processed = applyImageFilters(originalImageData, allChannels, isGrayscale, luts as any);
+    const targetBuffer = new ImageData(originalImageData.width, originalImageData.height);
+    const processed = applyImageFilters(originalImageData, allChannels, isGrayscale, luts as any, targetBuffer);
     
     setOriginalImageData(processed);
     setThumbnailImageData(createThumbnail(processed, 48, 48));

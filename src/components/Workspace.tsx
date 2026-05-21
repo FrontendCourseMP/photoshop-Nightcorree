@@ -26,6 +26,9 @@ interface WorkspaceProps {
 export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked, imageMeta, levelsLUTs, imageData }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const hasBeenFilteredRef = useRef<boolean>(false);
+    
+    // ПЕРФОРМАНС: Буфер для результирующих данных (Zero-Allocation)
+    const targetDataRef = useRef<ImageData | null>(null);
 
     // 1. Дефолтное состояние без файла
     useEffect(() => {
@@ -34,48 +37,66 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
             canvas.width = 800;
             canvas.height = 600;
             hasBeenFilteredRef.current = false;
+            targetDataRef.current = null;
             const ctx = canvas.getContext('2d');
             if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
     }, [file]);
 
-    // 2. Логика загрузки
+    // 2. Логика загрузки (Оптимизировано: URL.createObjectURL)
     useEffect(() => {
         if (!file || !canvasRef.current) return;
 
         const extension = file.name.split('.').pop()?.toLowerCase();
+        let isCancelled = false;
 
         if (extension === 'png' || extension === 'jpg' || extension === 'jpeg') {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) return;
-                    ctx.drawImage(img, 0, 0);
-                    const loadedData = ctx.getImageData(0, 0, img.width, img.height);
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
 
-                    const isJpeg = extension === 'jpg' || extension === 'jpeg';
-                    onImageLoaded({ 
-                        width: img.width, 
-                        height: img.height, 
-                        colorDepth: isJpeg ? 24 : 32,
-                        hasAlpha: !isJpeg
-                    }, loadedData);
-                };
-                img.src = e.target?.result as string;
+            img.onload = () => {
+                if (isCancelled) {
+                    URL.revokeObjectURL(objectUrl);
+                    return;
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                
+                ctx.drawImage(img, 0, 0);
+                const loadedData = ctx.getImageData(0, 0, img.width, img.height);
+
+                // Инициализируем буфер один раз при загрузке
+                targetDataRef.current = new ImageData(img.width, img.height);
+
+                const isJpeg = extension === 'jpg' || extension === 'jpeg';
+                onImageLoaded({ 
+                    width: img.width, 
+                    height: img.height, 
+                    colorDepth: isJpeg ? 24 : 32,
+                    hasAlpha: !isJpeg
+                }, loadedData);
+
+                URL.revokeObjectURL(objectUrl);
+                img.onload = null;
             };
-            reader.readAsDataURL(file);
+
+            img.src = objectUrl;
+
         } else if (extension === 'gb7') {
             file.arrayBuffer().then((buffer) => {
+                if (isCancelled) return;
                 const result = decodeGB7(buffer);
                 if (!result) {
                     alert("Ошибка: не удалось прочитать файл формата GB7.");
                     return;
                 }
+                
+                targetDataRef.current = new ImageData(result.width, result.height);
+
                 onImageLoaded({ 
                     width: result.width, 
                     height: result.height, 
@@ -84,11 +105,16 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
                 }, result.imageData);
             });
         }
+
+        return () => {
+            isCancelled = true;
+        };
+
     }, [file, onImageLoaded]);
 
-    // 3. Логика отрисовки при изменении
+    // 3. Логика отрисовки при изменении (Оптимизировано: Zero-Allocation)
     useEffect(() => {
-        if (!imageData || !canvasRef.current) return;
+        if (!imageData || !canvasRef.current || !targetDataRef.current) return;
 
         const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
         const isDefaultChannels = isGrayscale 
@@ -114,12 +140,13 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            // Применяем все фильтры за один проход
+            // Используем постоянный буфер вместо создания нового массива каждый раз
             const processedData = applyImageFilters(
                 imageData, 
                 activeChannels, 
                 isGrayscale,
-                levelsLUTs as any
+                levelsLUTs as any,
+                targetDataRef.current! // Передаем буфер
             );
             
             ctx.putImageData(processedData, 0, 0);

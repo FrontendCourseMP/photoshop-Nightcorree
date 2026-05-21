@@ -2,17 +2,18 @@ import type { ChannelState } from '../components/ChannelPanel';
 
 /**
  * Применяет уровни и маску каналов за один проход.
- * Оптимизировано для больших изображений.
+ * Оптимизировано для больших изображений (Zero-Allocation паттерн).
+ * @param targetData Результирующий буфер, в который записываются данные (для исключения аллокаций памяти).
  */
 export function applyImageFilters(
     original: ImageData,
     channels: ChannelState,
     isGrayscale: boolean,
-    luts: { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array } | null
+    luts: { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array } | null,
+    targetData: ImageData
 ): ImageData {
-    const { width, height, data: iData } = original;
-    const output = new ImageData(new Uint8ClampedArray(iData.length), width, height);
-    const oData = output.data;
+    const { data: iData } = original;
+    const oData = targetData.data;
 
     const onlyAlpha = channels.a && (isGrayscale ? !channels.r : (!channels.r && !channels.g && !channels.b));
 
@@ -61,13 +62,13 @@ export function applyImageFilters(
         oData[i + 3] = channels.a ? a : 255;
     }
 
-    return output;
+    return targetData;
 }
 
 /**
  * Создает уменьшенную копию ImageData для превью.
- * Использует ручной алгоритм ближайшего соседа (Nearest Neighbor),
- * чтобы гарантированно сохранить значения каналов даже в прозрачных областях.
+ * Оптимизированный алгоритм ближайшего соседа (Nearest Neighbor),
+ * гарантирующий сохранение raw-данных каналов даже при A=0.
  */
 export function createThumbnail(original: ImageData, maxW: number = 100, maxH: number = 100): ImageData {
     const scale = Math.min(maxW / original.width, maxH / original.height, 1);
@@ -79,12 +80,16 @@ export function createThumbnail(original: ImageData, maxW: number = 100, maxH: n
     const iData = original.data;
     const iW = original.width;
 
+    // Оптимизация: выносим расчеты индексов из вложенных циклов
     for (let y = 0; y < h; y++) {
         const srcY = Math.floor(y / scale);
+        const srcRowOffset = srcY * iW * 4; // Смещение начала строки в исходных данных
+        const dstRowOffset = y * w * 4;     // Смещение начала строки в целевых данных
+
         for (let x = 0; x < w; x++) {
             const srcX = Math.floor(x / scale);
-            const srcIdx = (srcY * iW + srcX) * 4;
-            const dstIdx = (y * w + x) * 4;
+            const srcIdx = srcRowOffset + (srcX * 4);
+            const dstIdx = dstRowOffset + (x * 4);
             
             oData[dstIdx] = iData[srcIdx];
             oData[dstIdx + 1] = iData[srcIdx + 1];
