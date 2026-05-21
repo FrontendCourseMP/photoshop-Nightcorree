@@ -17,9 +17,10 @@ interface WorkspaceProps {
     activeChannels: ChannelState;
     activeTool: EditorTool;
     onColorPicked: (info: ColorInfo) => void;
+    imageMeta: ImageMeta | null;
 }
 
-export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked }: WorkspaceProps) {
+export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onColorPicked, imageMeta }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [originalImageData, setOriginalImageData] = useState<ImageData | null>(null);
 
@@ -105,11 +106,12 @@ export function Workspace({ file, onImageLoaded, activeChannels, activeTool, onC
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            const filteredData = applyChannels(originalImageData, activeChannels);
+            const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
+            const filteredData = applyChannels(originalImageData, activeChannels, isGrayscale);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.putImageData(filteredData, 0, 0);
         }
-    }, [originalImageData, activeChannels]);
+    }, [originalImageData, activeChannels, imageMeta]);
 
     // 4. Логика пипетки
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

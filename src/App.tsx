@@ -38,14 +38,15 @@ function App() {
   const handleImageLoaded = useCallback((meta: ImageMeta, imageData: ImageData) => {
     setImageMeta(meta);
     setPickedColor(null);
-    // Генерируем маленькое превью один раз при загрузке
     setThumbnailImageData(createThumbnail(imageData, 48, 48));
   }, []);
+
+  const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
 
   return (
     // Корневой контейнер: жестко 100% высоты и ширины, скрываем глобальный скролл
     <div className="h-screen w-full flex flex-col bg-editor-bg text-editor-text overflow-hidden">
-
+      
       {/* Обертка для Toolbar: запрещаем сжиматься по высоте */}
       <div className="shrink-0">
         <Toolbar 
@@ -54,7 +55,7 @@ function App() {
           onToolChange={setActiveTool}
         />
       </div>
-
+      
       {/* Рабочая область: занимает всё доступное место (flex-1) и позволяет внутренний скролл (overflow-auto) */}
       <main className="flex-1 overflow-hidden relative min-h-0 flex">
         <div className="flex-1 relative overflow-hidden">
@@ -64,15 +65,17 @@ function App() {
             activeChannels={channels}
             activeTool={activeTool}
             onColorPicked={setPickedColor}
+            imageMeta={imageMeta}
           />
         </div>
         <ChannelPanel 
           channels={channels} 
           onToggle={handleToggleChannel} 
           thumbnailImageData={thumbnailImageData}
+          isGrayscale={isGrayscale}
         />
       </main>
-
+      
       {/* Обертка для StatusBar: запрещаем сжиматься по высоте */}
       <div className="shrink-0">
         <StatusBar 
@@ -82,7 +85,7 @@ function App() {
           pickedColor={pickedColor}
         />
       </div>
-
+      
     </div>
   );
 }

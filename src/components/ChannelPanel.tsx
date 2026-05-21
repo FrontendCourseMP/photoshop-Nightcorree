@@ -12,6 +12,7 @@ interface ChannelPanelProps {
     channels: ChannelState;
     onToggle: (channel: keyof ChannelState) => void;
     thumbnailImageData: ImageData | null;
+    isGrayscale: boolean;
 }
 
 function ChannelThumbnail({ thumbnailData, channel }: { thumbnailData: ImageData | null, channel: keyof ChannelState }) {
@@ -24,7 +25,6 @@ function ChannelThumbnail({ thumbnailData, channel }: { thumbnailData: ImageData
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Извлекаем канал из уже маленького превью (это ОЧЕНЬ быстро)
         const previewData = getChannelPreview(thumbnailData, channel);
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -41,12 +41,12 @@ function ChannelThumbnail({ thumbnailData, channel }: { thumbnailData: ImageData
     );
 }
 
-export function ChannelPanel({ channels, onToggle, thumbnailImageData }: ChannelPanelProps) {
-    const channelList: { id: keyof ChannelState; label: string }[] = [
-        { id: 'r', label: 'Красный (R)' },
-        { id: 'g', label: 'Зеленый (G)' },
-        { id: 'b', label: 'Синий (B)' },
-        { id: 'a', label: 'Альфа (A)' },
+export function ChannelPanel({ channels, onToggle, thumbnailImageData, isGrayscale }: ChannelPanelProps) {
+    const channelList: { id: keyof ChannelState; label: string; visible: boolean }[] = [
+        { id: 'r', label: isGrayscale ? 'Серый (Gray)' : 'Красный (R)', visible: true },
+        { id: 'g', label: 'Зеленый (G)', visible: !isGrayscale },
+        { id: 'b', label: 'Синий (B)', visible: !isGrayscale },
+        { id: 'a', label: 'Альфа (A)', visible: true },
     ];
 
     return (
@@ -55,7 +55,7 @@ export function ChannelPanel({ channels, onToggle, thumbnailImageData }: Channel
                 Каналы
             </div>
             <div className="flex-1 overflow-y-auto">
-                {channelList.map(({ id, label }) => (
+                {channelList.filter(c => c.visible).map(({ id, label }) => (
                     <div 
                         key={id}
                         onClick={() => onToggle(id)}

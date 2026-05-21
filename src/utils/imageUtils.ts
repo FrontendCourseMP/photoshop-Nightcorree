@@ -4,16 +4,41 @@ import type { ChannelState } from '../components/ChannelPanel';
  * Применяет маску каналов к ImageData, возвращая новый объект ImageData.
  * Исходный объект не мутируется.
  */
-export function applyChannels(original: ImageData, channels: ChannelState): ImageData {
+export function applyChannels(original: ImageData, channels: ChannelState, isGrayscale: boolean): ImageData {
     const { width, height, data } = original;
-    const filtered = new ImageData(new Uint8ClampedArray(data), width, height);
+    const filtered = new ImageData(width, height);
     const fData = filtered.data;
 
-    for (let i = 0; i < fData.length; i += 4) {
-        if (!channels.r) fData[i] = 0;
-        if (!channels.g) fData[i + 1] = 0;
-        if (!channels.b) fData[i + 2] = 0;
-        if (!channels.a) fData[i + 3] = 0;
+    // Проверяем, включена ли ТОЛЬКО альфа
+    const onlyAlpha = channels.a && (isGrayscale ? !channels.r : (!channels.r && !channels.g && !channels.b));
+
+    for (let i = 0; i < data.length; i += 4) {
+        if (onlyAlpha) {
+            // Режим маски прозрачности: 
+            // Белый там, где непрозрачно, черный там, где прозрачно.
+            const alphaValue = data[i + 3];
+            fData[i] = alphaValue;
+            fData[i + 1] = alphaValue;
+            fData[i + 2] = alphaValue;
+            fData[i + 3] = 255;
+        } else {
+            // Обычный режим фильтрации
+            fData[i] = channels.r ? data[i] : 0;
+            
+            if (isGrayscale) {
+                // Для ч/б изображений все каналы R,G,B одинаковы
+                fData[i + 1] = channels.r ? data[i + 1] : 0;
+                fData[i + 2] = channels.r ? data[i + 2] : 0;
+            } else {
+                fData[i + 1] = channels.g ? data[i + 1] : 0;
+                fData[i + 2] = channels.b ? data[i + 2] : 0;
+            }
+
+            // Если альфа-канал выключен, делаем пиксель полностью непрозрачным (255),
+            // чтобы "проявить" скрытые данные (как в Photoshop).
+            // Если включен - оставляем оригинальную прозрачность.
+            fData[i + 3] = channels.a ? data[i + 3] : 255;
+        }
     }
 
     return filtered;
