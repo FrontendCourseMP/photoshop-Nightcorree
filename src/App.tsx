@@ -104,7 +104,7 @@ function App() {
 
   const handleApplyFilters = (kernel: number[], strategy: EdgeStrategy, activeChannels: ChannelState) => {
     if (!originalImageData) return;
-    const processed = applyConvolution(originalImageData, kernel, strategy, activeChannels);
+    const processed = applyConvolution(originalImageData, kernel, strategy, activeChannels, isGrayscale);
     setOriginalImageData(processed);
     setThumbnailImageData(createThumbnail(processed, 48, 48));
     setPreviewFilter(null);

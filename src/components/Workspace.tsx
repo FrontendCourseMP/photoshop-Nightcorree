@@ -220,7 +220,8 @@ export function Workspace({
                     finalOriginalData, 
                     previewFilter.kernel, 
                     previewFilter.strategy, 
-                    previewFilter.channels
+                    previewFilter.channels,
+                    isGrayscale
                 );
             }
         }

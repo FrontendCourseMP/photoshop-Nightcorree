@@ -8,8 +8,8 @@ export type EdgeStrategy = 'black' | 'white' | 'copy';
 export const FILTER_PRESETS = {
     identity: [0, 0, 0, 0, 1, 0, 0, 0, 0],
     sharpen: [0, -1, 0, -1, 5, -1, 0, -1, 0],
-    gaussian: [1, 2, 1, 2, 4, 2, 1, 2, 1], // Будет нормализовано на 16
-    boxBlur: [1, 1, 1, 1, 1, 1, 1, 1, 1],   // Будет нормализовано на 9
+    gaussian: [1, 2, 1, 2, 4, 2, 1, 2, 1], // Нормализуется на 16
+    boxBlur: [1, 1, 1, 1, 1, 1, 1, 1, 1],   // Нормализуется на 9
     pruittX: [-1, 0, 1, -1, 0, 1, -1, 0, 1],
     pruittY: [-1, -1, -1, 0, 0, 0, 1, 1, 1]
 };
@@ -21,7 +21,8 @@ export function applyConvolution(
     src: ImageData,
     kernel: number[],
     edgeStrategy: EdgeStrategy,
-    activeChannels: ChannelState
+    activeChannels: ChannelState,
+    isGrayscale: boolean = false
 ): ImageData {
     const { width: w, height: h, data: srcData } = src;
     const dst = new ImageData(w, h);
@@ -37,22 +38,27 @@ export function applyConvolution(
 
             for (let c = 0; c < 4; c++) {
                 const isAlpha = c === 3;
-                const channelKey = isAlpha ? 'a' : (c === 0 ? 'r' : (c === 1 ? 'g' : 'b'));
                 
-                if (!activeChannels[channelKey as keyof ChannelState]) {
+                // Определяем, нужно ли фильтровать этот канал
+                let shouldFilter: boolean;
+                if (isAlpha) {
+                    shouldFilter = activeChannels.a;
+                } else if (isGrayscale) {
+                    // В Ч/Б режиме фильтруем любой из RGB, если активен 'r' (Серый)
+                    shouldFilter = activeChannels.r;
+                } else {
+                    const channelKey = c === 0 ? 'r' : (c === 1 ? 'g' : 'b');
+                    shouldFilter = activeChannels[channelKey as keyof ChannelState];
+                }
+                
+                if (!shouldFilter) {
                     dstData[idx + c] = srcData[idx + c];
                     continue;
                 }
 
                 let sum = 0;
 
-                for (let ky = -1; ky <= 1; ky++) {
-                    for (let kx = -1; x + kx <= x + 1; kx++) {
-                        // ky и kx здесь относительные смещения (-1, 0, 1)
-                    }
-                }
-                
-                // Исправленный цикл прохода по ядру
+                // Проход по ядру 3x3
                 for (let ky = -1; ky <= 1; ky++) {
                     const iy = y + ky;
                     for (let kx = -1; kx <= 1; kx++) {
@@ -61,12 +67,13 @@ export function applyConvolution(
 
                         let pixelVal: number;
 
+                        // Логика обработки краев (Edge Handling)
                         if (ix < 0 || ix >= w || iy < 0 || iy >= h) {
                             if (edgeStrategy === 'black') {
                                 pixelVal = isAlpha ? 255 : 0;
                             } else if (edgeStrategy === 'white') {
                                 pixelVal = 255;
-                            } else { // copy
+                            } else { // copy (clamp)
                                 const cx = Math.max(0, Math.min(w - 1, ix));
                                 const cy = Math.max(0, Math.min(h - 1, iy));
                                 pixelVal = srcData[(cy * w + cx) * 4 + c];
