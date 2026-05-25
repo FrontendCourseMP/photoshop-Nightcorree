@@ -5,6 +5,7 @@ import { StatusBar } from './components/StatusBar';
 import { ChannelPanel, type ChannelState } from './components/ChannelPanel';
 import { LevelsDialog } from './components/LevelsDialog';
 import { createThumbnail, applyImageFilters } from './utils/imageUtils';
+import type { InterpolationMethod } from './utils/interpolation.ts';
 
 export interface ColorInfo {
   x: number;
@@ -26,6 +27,10 @@ function App() {
   
   const [previewLUTs, setPreviewLUTs] = useState<Record<string, Uint8Array> | null>(null);
 
+  // ЛАБА 5: Состояние масштаба и метода интерполяции
+  const [viewScale, setViewScale] = useState(1); // 1 = 100%
+  const [interpolationMethod, setInterpolationMethod] = useState<InterpolationMethod>('bilinear');
+
   const [channels, setChannels] = useState<ChannelState>({
     r: true,
     g: true,
@@ -46,8 +51,23 @@ function App() {
     setOriginalImageData(imageData);
     setPreviewLUTs(null);
     
-    // ПЕРФОРМАНС: Генерируем миниатюру в фоне, чтобы не блокировать UI
-    // Это позволяет сразу отобразить основную картинку и оставить интерфейс отзывчивым
+    // ЛАБА 5: Авто-масштабирование под размер экрана (с отступом 50px)
+    const viewportWidth = window.innerWidth - 300; // вычитаем боковую панель
+    const viewportHeight = window.innerHeight - 150; // вычитаем тулбар и статусбар
+    
+    const scaleX = (viewportWidth - 100) / meta.width;
+    const scaleY = (viewportHeight - 100) / meta.height;
+    
+    // Выбираем минимальный масштаб, чтобы вписаться по обеим осям, 
+    // но ограничиваем диапазоном 12% - 300% согласно заданию.
+    let initialScale = Math.min(scaleX, scaleY);
+    initialScale = Math.max(0.12, Math.min(3, initialScale));
+    
+    // Находим ближайшее значение из нашего списка SCALE_OPTIONS для красоты (опционально)
+    // или просто устанавливаем расчетное. Установим расчетное для точности.
+    setViewScale(initialScale);
+    
+    // ПЕРФОРМАНС: Генерируем миниатюру в фоне
     setTimeout(() => {
         setThumbnailImageData(createThumbnail(imageData, 48, 48));
     }, 100);
@@ -102,6 +122,8 @@ function App() {
             imageMeta={imageMeta}
             levelsLUTs={previewLUTs}
             imageData={originalImageData}
+            viewScale={viewScale}
+            interpolationMethod={interpolationMethod}
           />
         </div>
         <ChannelPanel 
@@ -120,6 +142,10 @@ function App() {
           height={imageMeta?.height || 0} 
           colorDepth={imageMeta?.colorDepth || 0} 
           pickedColor={pickedColor}
+          viewScale={viewScale}
+          onViewScaleChange={setViewScale}
+          interpolationMethod={interpolationMethod}
+          onInterpolationMethodChange={setInterpolationMethod}
         />
       </div>
 
