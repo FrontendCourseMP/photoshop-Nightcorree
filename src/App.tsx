@@ -175,6 +175,7 @@ function App() {
           onPreview={setPreviewLUTs}
           originalImageData={originalImageData}
           isGrayscale={isGrayscale}
+          hasAlpha={!!imageMeta?.hasAlpha}
         />
       )}
 
@@ -193,6 +194,7 @@ function App() {
           onApply={handleApplyFilters}
           onPreview={handlePreviewFilter}
           isGrayscale={isGrayscale}
+          hasAlpha={!!imageMeta?.hasAlpha}
         />
       )}
     </div>

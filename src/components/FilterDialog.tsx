@@ -8,9 +8,10 @@ interface FilterDialogProps {
     onApply: (kernel: number[], edgeStrategy: EdgeStrategy, activeChannels: ChannelState) => void;
     onPreview: (kernel: number[] | null, edgeStrategy: EdgeStrategy, activeChannels: ChannelState) => void;
     isGrayscale: boolean;
+    hasAlpha: boolean;
 }
 
-export function FilterDialog({ onClose, onApply, onPreview, isGrayscale }: FilterDialogProps) {
+export function FilterDialog({ onClose, onApply, onPreview, isGrayscale, hasAlpha }: FilterDialogProps) {
     const [kernel, setKernel] = useState<number[]>(FILTER_PRESETS.identity);
     const [edgeStrategy, setEdgeStrategy] = useState<EdgeStrategy>('copy');
     const [activeChannels, setActiveChannels] = useState<ChannelState>({ r: true, g: true, b: true, a: false });
@@ -93,6 +94,7 @@ export function FilterDialog({ onClose, onApply, onPreview, isGrayscale }: Filte
                             <div className="grid grid-cols-2 gap-y-2.5">
                                 {(['r', 'g', 'b', 'a'] as const).map(ch => {
                                     if (isGrayscale && (ch === 'g' || ch === 'b')) return null;
+                                    if (ch === 'a' && !hasAlpha) return null; // Скрываем альфу если ее нет
                                     const label = ch === 'r' ? (isGrayscale ? 'Серый' : 'Красный') : (ch === 'g' ? 'Зеленый' : (ch === 'b' ? 'Синий' : 'Альфа'));
                                     return (
                                         <label key={ch} className="flex items-center gap-3 cursor-pointer group">
@@ -156,7 +158,7 @@ export function FilterDialog({ onClose, onApply, onPreview, isGrayscale }: Filte
                     <div className="flex gap-3">
                         <button 
                             onClick={onClose} 
-                            className="px-6 py-2 text-xs font-bold rounded border border-editor-border hover:bg-white/5 transition-colors cursor-pointer"
+                            className="px-6 py-2 text-xs font-bold rounded border border-editor-border hover:bg-white/5 transition-colors cursor-pointer text-editor-text/60"
                         >
                             ЗАКРЫТЬ
                         </button>

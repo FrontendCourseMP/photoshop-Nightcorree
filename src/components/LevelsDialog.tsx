@@ -13,6 +13,7 @@ interface LevelsDialogProps {
     onPreview: (luts: Record<string, Uint8Array> | null) => void;
     originalImageData: ImageData | null;
     isGrayscale: boolean;
+    hasAlpha: boolean;
 }
 
 type LevelsChannel = 'master' | 'r' | 'g' | 'b' | 'a';
@@ -20,7 +21,7 @@ type LevelsChannel = 'master' | 'r' | 'g' | 'b' | 'a';
 const DEFAULT_LEVELS: LevelSettings = { black: 0, white: 255, gamma: 1.0 };
 const DEFAULT_LEVELS_GS: LevelSettings = { black: 0, white: 127, gamma: 1.0 };
 
-export function LevelsDialog({ onClose, onApply, onPreview, originalImageData, isGrayscale }: LevelsDialogProps) {
+export function LevelsDialog({ onClose, onApply, onPreview, originalImageData, isGrayscale, hasAlpha }: LevelsDialogProps) {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sliderRef = useRef<HTMLDivElement>(null);
@@ -185,7 +186,7 @@ export function LevelsDialog({ onClose, onApply, onPreview, originalImageData, i
                             <option value="r" className="bg-editor-panel text-white">{isGrayscale ? 'Серый' : 'Красный'}</option>
                             {!isGrayscale && <option value="g" className="bg-editor-panel text-white">Зеленый</option>}
                             {!isGrayscale && <option value="b" className="bg-editor-panel text-white">Синий</option>}
-                            <option value="a" className="bg-editor-panel text-white">Альфа</option>
+                            {hasAlpha && <option value="a" className="bg-editor-panel text-white">Альфа</option>}
                         </select>
                     </div>
                     <div className="flex flex-col gap-0">
@@ -220,19 +221,39 @@ export function LevelsDialog({ onClose, onApply, onPreview, originalImageData, i
                     </div>
                     <div className="grid grid-cols-2 gap-4 mt-2">
                         <label className="flex items-center gap-3 cursor-pointer group">
-                            <input type="checkbox" checked={isPreviewEnabled} onChange={(e) => setIsPreviewEnabled(e.target.checked)} className="w-4 h-4 rounded accent-editor-accent" />
+                            <div className="relative flex items-center">
+                                <input 
+                                    type="checkbox" 
+                                    checked={isPreviewEnabled} 
+                                    onChange={(e) => setIsPreviewEnabled(e.target.checked)}
+                                    className="peer w-4 h-4 rounded border-editor-border bg-[#0d1117] checked:bg-editor-accent appearance-none cursor-pointer transition-all"
+                                />
+                                <svg className="absolute w-3 h-3 text-white hidden peer-checked:block left-0.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
                             <span className="text-xs group-hover:text-white transition-colors">Предпросмотр</span>
                         </label>
                         <label className="flex items-center gap-3 cursor-pointer group">
-                            <input type="checkbox" checked={isLogarithmic} onChange={(e) => setIsLogarithmic(e.target.checked)} className="w-4 h-4 rounded accent-editor-accent" />
+                            <div className="relative flex items-center">
+                                <input 
+                                    type="checkbox" 
+                                    checked={isLogarithmic} 
+                                    onChange={(e) => setIsLogarithmic(e.target.checked)}
+                                    className="peer w-4 h-4 rounded border-editor-border bg-[#0d1117] checked:bg-editor-accent appearance-none cursor-pointer transition-all"
+                                />
+                                <svg className="absolute w-3 h-3 text-white hidden peer-checked:block left-0.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
                             <span className="text-xs group-hover:text-white transition-colors">Логарифм. гистограмма</span>
                         </label>
                     </div>
                 </div>
                 <div className="p-4 bg-black/20 border-t border-editor-border flex justify-between items-center">
-                    <button onClick={handleReset} className="px-5 py-2 text-xs font-bold rounded border border-editor-border hover:bg-white/5 transition-colors cursor-pointer">Сбросить всё</button>
+                    <button onClick={handleReset} className="px-5 py-2 text-xs font-bold rounded border border-editor-border hover:bg-white/5 transition-colors cursor-pointer text-editor-text/40">СБРОСИТЬ ВСЁ</button>
                     <div className="flex gap-3">
-                        <button onClick={handleCancel} className="px-5 py-2 text-xs font-bold rounded hover:bg-white/5 transition-colors cursor-pointer">Отмена</button>
+                        <button onClick={handleCancel} className="px-5 py-2 text-xs font-bold rounded hover:bg-white/5 transition-colors cursor-pointer text-editor-text/60">ОТМЕНА</button>
                         <button onClick={() => onApply(currentLUTs)} className="px-8 py-2 text-xs rounded bg-editor-accent text-white font-black uppercase tracking-wider hover:brightness-110 shadow-lg shadow-editor-accent/20 transition-all cursor-pointer">Применить</button>
                     </div>
                 </div>
