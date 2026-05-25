@@ -12,8 +12,6 @@ interface StatusBarProps {
   onInterpolationMethodChange?: (method: InterpolationMethod) => void;
 }
 
-const SCALE_OPTIONS = [0.12, 0.25, 0.5, 0.66, 1, 1.5, 2, 3];
-
 export function StatusBar({ 
   width, height, colorDepth, pickedColor, 
   viewScale = 1, onViewScaleChange,

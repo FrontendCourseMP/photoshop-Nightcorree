@@ -3,6 +3,19 @@
  */
 export type InterpolationMethod = 'nearest' | 'bilinear';
 
+export const INTERPOLATION_INFO: Record<InterpolationMethod, { label: string, description: string, advantages: string }> = {
+    nearest: {
+        label: 'Ближайший сосед',
+        description: 'Выбирает цвет самого близкого пикселя из исходного изображения.',
+        advantages: 'Самый быстрый метод. Сохраняет жесткие края и не вносит новых цветов. Идеален для Pixel Art.'
+    },
+    bilinear: {
+        label: 'Билинейная',
+        description: 'Вычисляет среднее значение цвета на основе 4-х соседних пикселей.',
+        advantages: 'Обеспечивает плавные переходы и отсутствие ступенчатости. Лучший выбор для фотографий.'
+    }
+};
+
 /**
  * Интерфейс для реализации алгоритмов масштабирования
  */

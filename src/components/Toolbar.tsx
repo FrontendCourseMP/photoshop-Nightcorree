@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Upload, Download, Image as ImageIcon, MousePointer2, Pipette, SlidersHorizontal } from 'lucide-react';
+import { Upload, Download, Image as ImageIcon, MousePointer2, Pipette, SlidersHorizontal, Maximize } from 'lucide-react';
 import { encodeGB7 } from '../utils/gb7Codec';
 
 export type EditorTool = 'hand' | 'eyedropper';
@@ -9,10 +9,11 @@ interface ToolbarProps {
   activeTool: EditorTool;
   onToolChange: (tool: EditorTool) => void;
   onOpenLevels: () => void;
+  onOpenResize: () => void;
   hasImage: boolean;
 }
 
-export function Toolbar({ onFileSelect, activeTool, onToolChange, onOpenLevels, hasImage }: ToolbarProps) {
+export function Toolbar({ onFileSelect, activeTool, onToolChange, onOpenLevels, onOpenResize, hasImage }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Симулируем клик по скрытому инпуту при нажатии на кнопку "Открыть"
@@ -99,6 +100,15 @@ export function Toolbar({ onFileSelect, activeTool, onToolChange, onOpenLevels, 
       >
         <SlidersHorizontal size={16} />
         Уровни
+      </button>
+
+      <button 
+        disabled={!hasImage}
+        onClick={onOpenResize}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors text-sm ${!hasImage ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10 text-editor-text cursor-pointer'}`}
+      >
+        <Maximize size={16} />
+        Размер
       </button>
 
       <div className="h-6 w-[1px] bg-editor-border mx-2"></div>

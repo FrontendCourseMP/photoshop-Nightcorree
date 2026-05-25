@@ -4,8 +4,9 @@ import { Workspace, type ImageMeta } from './components/Workspace';
 import { StatusBar } from './components/StatusBar';
 import { ChannelPanel, type ChannelState } from './components/ChannelPanel';
 import { LevelsDialog } from './components/LevelsDialog';
+import { ResizeDialog } from './components/ResizeDialog';
 import { createThumbnail, applyImageFilters } from './utils/imageUtils';
-import type { InterpolationMethod } from './utils/interpolation.ts';
+import { ScalingProvider, type InterpolationMethod } from './utils/interpolation.ts';
 
 export interface ColorInfo {
   x: number;
@@ -24,6 +25,7 @@ function App() {
   const [activeTool, setActiveTool] = useState<EditorTool>('hand');
   const [pickedColor, setPickedColor] = useState<ColorInfo | null>(null);
   const [isLevelsOpen, setIsLevelsOpen] = useState(false);
+  const [isResizeOpen, setIsResizeOpen] = useState(false);
   
   const [previewLUTs, setPreviewLUTs] = useState<Record<string, Uint8Array> | null>(null);
 
@@ -95,6 +97,18 @@ function App() {
     setIsLevelsOpen(false);
   };
 
+  const handleApplyResize = (width: number, height: number, method: InterpolationMethod) => {
+    if (!originalImageData) return;
+    
+    // Физически меняем размер оригинального изображения (Лабораторная 5)
+    const resized = ScalingProvider.scale(originalImageData, width, height, method);
+    
+    setOriginalImageData(resized);
+    setThumbnailImageData(createThumbnail(resized, 48, 48));
+    setImageMeta(prev => prev ? { ...prev, width, height } : null);
+    setIsResizeOpen(false);
+  };
+
   return (
     // Корневой контейнер: жестко 100% высоты и ширины, скрываем глобальный скролл
     <div className="h-screen w-full flex flex-col bg-editor-bg text-editor-text overflow-hidden">
@@ -106,6 +120,7 @@ function App() {
           activeTool={activeTool}
           onToolChange={setActiveTool}
           onOpenLevels={() => setIsLevelsOpen(true)}
+          onOpenResize={() => setIsResizeOpen(true)}
           hasImage={!!imageMeta}
         />
       </div>
@@ -156,6 +171,14 @@ function App() {
         onPreview={setPreviewLUTs}
         originalImageData={originalImageData}
         isGrayscale={isGrayscale}
+      />
+
+      <ResizeDialog 
+        isOpen={isResizeOpen}
+        onClose={() => setIsResizeOpen(false)}
+        onApply={handleApplyResize}
+        currentWidth={originalImageData?.width || 0}
+        currentHeight={originalImageData?.height || 0}
       />
       
     </div>
