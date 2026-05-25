@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { decodeGB7 } from '../utils/gb7Codec';
 import { rgbToLab, applyImageFilters } from '../utils/imageUtils';
 import { ScalingProvider, type InterpolationMethod } from '../utils/interpolation';
@@ -40,6 +40,12 @@ export function Workspace({
     // ПЕРФОРМАНС: Буферы для результирующих данных (Zero-Allocation)
     const targetDataRef = useRef<ImageData | null>(null);
 
+    // ПЕРФОРМАНС: Гибридный рендеринг для Zoom (Fast + High Quality)
+    const isZoomingRef = useRef(false);
+    const [, forceUpdate] = useState(0);
+    const zoomTimeoutRef = useRef<number | null>(null);
+    const sourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
     // Логика панорамирования (Hand Tool)
     const isDraggingRef = useRef(false);
     const lastMousePos = useRef({ x: 0, y: 0 });
@@ -65,16 +71,23 @@ export function Workspace({
         isDraggingRef.current = false;
     };
 
-    // 1. Дефолтное состояние без файла
+    // 1. Дефолтное состояние и очистка при смене файла
     useEffect(() => {
-        if (!file && canvasRef.current) {
-            const canvas = canvasRef.current;
-            canvas.width = 800;
-            canvas.height = 600;
-            hasBeenFilteredRef.current = false;
-            targetDataRef.current = null;
+        const canvas = canvasRef.current;
+        if (canvas) {
+            // Если файла нет, возвращаем стандартный размер 800x600
+            if (!file) {
+                canvas.width = 800;
+                canvas.height = 600;
+            }
+            
+            // Мгновенно очищаем холст и сбрасываем кэши при смене файла
             const ctx = canvas.getContext('2d');
             if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            hasBeenFilteredRef.current = false;
+            targetDataRef.current = null;
+            sourceCanvasRef.current = null;
         }
     }, [file]);
 
@@ -186,11 +199,35 @@ export function Workspace({
 
     }, [file, onImageLoaded]);
 
-    // 3. Логика отрисовки при изменении (Оптимизировано + Лаба 4 Интерполяция)
+    // 2.1 Логика отслеживания Zoom-активности
     useEffect(() => {
-        if (!imageData || !canvasRef.current || !targetDataRef.current) return;
+        isZoomingRef.current = true;
+        if (zoomTimeoutRef.current) window.clearTimeout(zoomTimeoutRef.current);
+        
+        zoomTimeoutRef.current = window.setTimeout(() => {
+            isZoomingRef.current = false;
+            zoomTimeoutRef.current = null;
+            forceUpdate(v => v + 1); 
+        }, 150);
+        
+        return () => {
+            if (zoomTimeoutRef.current) window.clearTimeout(zoomTimeoutRef.current);
+        };
+    }, [viewScale]);
 
-        const isGrayscale = imageMeta?.colorDepth === 7 || imageMeta?.colorDepth === 8;
+    // 3. Логика отрисовки при изменении (Оптимизировано + Лаба 4 Интерполяция + Фикс Resize)
+    useEffect(() => {
+        // ВАЖНО: Если imageData отсутствует (идет загрузка нового файла), выходим.
+        // Это предотвращает наложение старой картинки на новый холст.
+        if (!imageData || !canvasRef.current || !imageMeta) return;
+
+        // ФИКС РЕСАЙЗА: Если буфер не совпадает с размером картинки — пересоздаем его
+        if (!targetDataRef.current || targetDataRef.current.width !== imageData.width || targetDataRef.current.height !== imageData.height) {
+            targetDataRef.current = new ImageData(imageData.width, imageData.height);
+            sourceCanvasRef.current = null;
+        }
+
+        const isGrayscale = imageMeta.colorDepth === 7 || imageMeta.colorDepth === 8;
         const isDefaultChannels = isGrayscale 
             ? (activeChannels.r && activeChannels.a) 
             : (activeChannels.r && activeChannels.g && activeChannels.b && activeChannels.a);
@@ -199,12 +236,11 @@ export function Workspace({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // ЭТАП А: Применяем фильтры (Уровни, Каналы) в оригинальном разрешении
+        // ЭТАП А: Применяем фильтры (Уровни, Каналы, Свертка)
         let finalOriginalData: ImageData;
         if (!levelsLUTs && isDefaultChannels && !previewFilter) {
             finalOriginalData = imageData;
         } else {
-            // Исправляем типизацию для корректного билда
             const lutsTyped = levelsLUTs as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
             finalOriginalData = applyImageFilters(
                 imageData, 
@@ -214,7 +250,6 @@ export function Workspace({
                 targetDataRef.current!
             );
 
-            // ПРИМЕНЯЕМ СВЕРТКУ ДЛЯ ПРЕДПРОСМОТРА (Лабораторная 5)
             if (previewFilter) {
                 finalOriginalData = applyConvolution(
                     finalOriginalData, 
@@ -226,19 +261,35 @@ export function Workspace({
             }
         }
 
+        // ПЕРФОРМАНС: Обновляем кэш-холст для быстрого зума
+        if (!sourceCanvasRef.current) {
+            sourceCanvasRef.current = document.createElement('canvas');
+            sourceCanvasRef.current.width = imageData.width;
+            sourceCanvasRef.current.height = imageData.height;
+        }
+        const sCtx = sourceCanvasRef.current.getContext('2d', { alpha: true });
+        if (sCtx) {
+            sCtx.putImageData(finalOriginalData, 0, 0);
+        }
+
         // ЭТАП Б: Масштабируем результат для отображения (Лабораторная 4)
         const targetWidth = Math.max(1, Math.round(imageData.width * viewScale));
         const targetHeight = Math.max(1, Math.round(imageData.height * viewScale));
 
-        // Выставляем размер холста под масштаб
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
+        // ПРОВЕРКА: Если текущий размер холста не совпадает с расчетным — обновляем.
+        // Браузер очистит холст автоматически при смене width/height.
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+        }
 
-        if (viewScale === 1) {
-            // Если масштаб 100%, просто выводим
+        // ГИБРИДНЫЙ РЕНДЕРИНГ: 
+        if (isZoomingRef.current && viewScale !== 1) {
+            ctx.imageSmoothingEnabled = interpolationMethod === 'bilinear';
+            ctx.drawImage(sourceCanvasRef.current, 0, 0, targetWidth, targetHeight);
+        } else if (viewScale === 1) {
             ctx.putImageData(finalOriginalData, 0, 0);
         } else {
-            // Используем СОБСТВЕННУЮ реализацию интерполяции
             const scaledData = ScalingProvider.scale(
                 finalOriginalData, 
                 targetWidth, 

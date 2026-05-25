@@ -51,6 +51,17 @@ function App() {
     }));
   }, []);
 
+  // ФИКС: Мгновенная очистка при выборе нового файла
+  const handleFileSelect = useCallback((file: File) => {
+    setSelectedFile(file);
+    setOriginalImageData(null);
+    setImageMeta(null);
+    setThumbnailImageData(null);
+    setPickedColor(null);
+    setPreviewFilter(null);
+    setPreviewLUTs(null);
+  }, []);
+
   const handleImageLoaded = useCallback((meta: ImageMeta, imageData: ImageData) => {
     setImageMeta(meta);
     setPickedColor(null);
@@ -120,7 +131,7 @@ function App() {
     <div className="h-screen w-full flex flex-col bg-editor-bg text-editor-text overflow-hidden">
       <div className="shrink-0">
         <Toolbar 
-          onFileSelect={setSelectedFile} 
+          onFileSelect={handleFileSelect} 
           activeTool={activeTool}
           onToolChange={setActiveTool}
           onOpenLevels={() => setIsLevelsOpen(true)}
