@@ -8,7 +8,6 @@ interface LevelSettings {
 }
 
 interface LevelsDialogProps {
-    isOpen: boolean;
     onClose: () => void;
     onApply: (luts: Record<string, Uint8Array>) => void;
     onPreview: (luts: Record<string, Uint8Array> | null) => void;
@@ -21,7 +20,7 @@ type LevelsChannel = 'master' | 'r' | 'g' | 'b' | 'a';
 const DEFAULT_LEVELS: LevelSettings = { black: 0, white: 255, gamma: 1.0 };
 const DEFAULT_LEVELS_GS: LevelSettings = { black: 0, white: 127, gamma: 1.0 };
 
-export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImageData, isGrayscale }: LevelsDialogProps) {
+export function LevelsDialog({ onClose, onApply, onPreview, originalImageData, isGrayscale }: LevelsDialogProps) {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sliderRef = useRef<HTMLDivElement>(null);
@@ -31,7 +30,7 @@ export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImag
     const [isPreviewEnabled, setIsPreviewEnabled] = useState(true);
 
     // Логика перетаскивания (Dragging)
-    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [position, setPosition] = useState({ x: (window.innerWidth - 520) / 2, y: 100 });
     const [isDragging, setIsDragging] = useState(false);
     const dragStartPos = useRef({ x: 0, y: 0 });
 
@@ -63,10 +62,6 @@ export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImag
     const current = settings[selectedChannel];
     const maxVal = (selectedChannel === 'master' || selectedChannel === 'r') && isGrayscale ? 127 : 255;
 
-    useEffect(() => {
-        if (isOpen) setSettings(initialSettings);
-    }, [isOpen, initialSettings]);
-
     const currentLUTs = useMemo(() => {
         const luts: Record<string, Uint8Array> = {};
         const channels: LevelsChannel[] = ['master', 'r', 'g', 'b', 'a'];
@@ -84,13 +79,14 @@ export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImag
     }, [settings, isGrayscale]);
 
     useEffect(() => {
-        if (isOpen && isPreviewEnabled) onPreview(currentLUTs); else onPreview(null);
-    }, [isOpen, isPreviewEnabled, currentLUTs, onPreview]);
+        if (isPreviewEnabled) onPreview(currentLUTs); else onPreview(null);
+        return () => onPreview(null);
+    }, [isPreviewEnabled, currentLUTs, onPreview]);
 
     const handleLevelChange = (key: keyof LevelSettings, value: number) => {
         setSettings(prev => {
             const curr = prev[selectedChannel];
-            let next = { ...curr, [key]: value };
+            const next = { ...curr, [key]: value };
             if (key === 'black' && next.black >= next.white) next.black = next.white - 1;
             if (key === 'white' && next.white <= next.black) next.white = next.black + 1;
             return { ...prev, [selectedChannel]: next };
@@ -108,19 +104,13 @@ export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImag
 
     useEffect(() => {
         const dialog = dialogRef.current;
-        if (!dialog) return;
-        if (isOpen) {
-            dialog.show(); 
-            setPosition({ x: (window.innerWidth - 520) / 2, y: 100 });
-        } else {
-            dialog.close();
-        }
-    }, [isOpen]);
+        if (dialog) dialog.show();
+    }, []);
 
     const histogramData = useMemo(() => {
-        if (!isOpen || !originalImageData) return [];
+        if (!originalImageData) return [];
         return calculateHistogram(originalImageData, selectedChannel, isGrayscale);
-    }, [isOpen, originalImageData, selectedChannel, isGrayscale]);
+    }, [originalImageData, selectedChannel, isGrayscale]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -155,7 +145,7 @@ export function LevelsDialog({ isOpen, onClose, onApply, onPreview, originalImag
                 const newGamma = Math.pow(9.9, (0.5 - relativePos) * 2);
                 handleLevelChange('gamma', Math.round(newGamma * 100) / 100);
             } else {
-                let newVal = Math.round(ratio * maxVal);
+                const newVal = Math.round(ratio * maxVal);
                 handleLevelChange(type, newVal);
             }
         };

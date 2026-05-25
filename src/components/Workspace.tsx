@@ -183,7 +183,7 @@ export function Workspace({
 
     }, [file, onImageLoaded]);
 
-    // 3. Логика отрисовки при изменении (Оптимизировано + Лаба 5 Интерполяция)
+    // 3. Логика отрисовки при изменении (Оптимизировано + Лаба 4 Интерполяция)
     useEffect(() => {
         if (!imageData || !canvasRef.current || !targetDataRef.current) return;
 
@@ -201,16 +201,18 @@ export function Workspace({
         if (!levelsLUTs && isDefaultChannels) {
             finalOriginalData = imageData;
         } else {
+            // Исправляем типизацию для корректного билда
+            const lutsTyped = levelsLUTs as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
             finalOriginalData = applyImageFilters(
                 imageData, 
                 activeChannels, 
                 isGrayscale,
-                levelsLUTs as any,
+                lutsTyped,
                 targetDataRef.current!
             );
         }
 
-        // ЭТАП Б: Масштабируем результат для отображения (Лабораторная 5)
+        // ЭТАП Б: Масштабируем результат для отображения (Лабораторная 4)
         const targetWidth = Math.max(1, Math.round(imageData.width * viewScale));
         const targetHeight = Math.max(1, Math.round(imageData.height * viewScale));
 

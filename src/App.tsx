@@ -29,7 +29,7 @@ function App() {
   
   const [previewLUTs, setPreviewLUTs] = useState<Record<string, Uint8Array> | null>(null);
 
-  // ЛАБА 5: Состояние масштаба и метода интерполяции
+  // ЛАБА 4: Состояние масштаба и метода интерполяции
   const [viewScale, setViewScale] = useState(1); // 1 = 100%
   const [interpolationMethod, setInterpolationMethod] = useState<InterpolationMethod>('bilinear');
 
@@ -53,7 +53,7 @@ function App() {
     setOriginalImageData(imageData);
     setPreviewLUTs(null);
     
-    // ЛАБА 5: Авто-масштабирование под размер экрана (с отступом 50px)
+    // ЛАБА 4: Авто-масштабирование под размер экрана (с отступом 50px)
     const viewportWidth = window.innerWidth - 300; // вычитаем боковую панель
     const viewportHeight = window.innerHeight - 150; // вычитаем тулбар и статусбар
     
@@ -84,7 +84,10 @@ function App() {
     // чтобы не "запекать" текущую видимость (например, скрытую Альфу) в данные навсегда.
     const allChannels: ChannelState = { r: true, g: true, b: true, a: true };
     const targetBuffer = new ImageData(originalImageData.width, originalImageData.height);
-    const processed = applyImageFilters(originalImageData, allChannels, isGrayscale, luts as any, targetBuffer);
+    
+    // Исправляем типизацию для корректного билда
+    const lutsTyped = luts as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
+    const processed = applyImageFilters(originalImageData, allChannels, isGrayscale, lutsTyped, targetBuffer);
     
     setOriginalImageData(processed);
     setThumbnailImageData(createThumbnail(processed, 48, 48));
@@ -100,7 +103,7 @@ function App() {
   const handleApplyResize = (width: number, height: number, method: InterpolationMethod) => {
     if (!originalImageData) return;
     
-    // Физически меняем размер оригинального изображения (Лабораторная 5)
+    // Физически меняем размер оригинального изображения (Лабораторная 4)
     const resized = ScalingProvider.scale(originalImageData, width, height, method);
     
     setOriginalImageData(resized);
@@ -164,22 +167,24 @@ function App() {
         />
       </div>
 
-      <LevelsDialog 
-        isOpen={isLevelsOpen}
-        onClose={handleCancelLevels}
-        onApply={handleApplyLevels}
-        onPreview={setPreviewLUTs}
-        originalImageData={originalImageData}
-        isGrayscale={isGrayscale}
-      />
+      {isLevelsOpen && (
+        <LevelsDialog 
+          onClose={handleCancelLevels}
+          onApply={handleApplyLevels}
+          onPreview={setPreviewLUTs}
+          originalImageData={originalImageData}
+          isGrayscale={isGrayscale}
+        />
+      )}
 
-      <ResizeDialog 
-        isOpen={isResizeOpen}
-        onClose={() => setIsResizeOpen(false)}
-        onApply={handleApplyResize}
-        currentWidth={originalImageData?.width || 0}
-        currentHeight={originalImageData?.height || 0}
-      />
+      {isResizeOpen && (
+        <ResizeDialog 
+          onClose={() => setIsResizeOpen(false)}
+          onApply={handleApplyResize}
+          currentWidth={originalImageData?.width || 0}
+          currentHeight={originalImageData?.height || 0}
+        />
+      )}
       
     </div>
   );

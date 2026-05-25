@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Modal } from './Modal';
 import { INTERPOLATION_INFO, type InterpolationMethod } from '../utils/interpolation';
 import { Link2, Link2Off, Info, ArrowRightLeft } from 'lucide-react';
 
 interface ResizeDialogProps {
-    isOpen: boolean;
     onClose: () => void;
     onApply: (width: number, height: number, method: InterpolationMethod) => void;
     currentWidth: number;
@@ -13,7 +12,7 @@ interface ResizeDialogProps {
 
 type ResizeUnit = 'pixels' | 'percent';
 
-export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHeight }: ResizeDialogProps) {
+export function ResizeDialog({ onClose, onApply, currentWidth, currentHeight }: ResizeDialogProps) {
     const [unit, setUnit] = useState<ResizeUnit>('pixels');
     const [width, setWidth] = useState<number | ''>(currentWidth);
     const [height, setHeight] = useState<number | ''>(currentHeight);
@@ -22,15 +21,6 @@ export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHe
     const [error, setError] = useState<string | null>(null);
 
     const aspectRatio = currentWidth / currentHeight;
-
-    useEffect(() => {
-        if (isOpen) {
-            setWidth(currentWidth);
-            setHeight(currentHeight);
-            setUnit('pixels');
-            setError(null);
-        }
-    }, [isOpen, currentWidth, currentHeight]);
 
     const handleWidthChange = (val: string) => {
         if (val === '') {
@@ -99,10 +89,9 @@ export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHe
     const afterMP = (width === '' || height === '') ? '0.00' : ((width * height) / 1000000).toFixed(2);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Масштабирование изображения">
+        <Modal isOpen={true} onClose={onClose} title="Масштабирование изображения">
             <div className="flex flex-col gap-6 w-[480px] font-sans">
                 
-                {/* Компактный инфо-бар (Горизонтальный) */}
                 <div className="flex items-center justify-between px-4 py-2 bg-black/40 border border-editor-border rounded-lg text-[10px] uppercase font-bold tracking-wider">
                    <div className="flex items-center gap-2">
                         <span className="opacity-30">Исходный:</span>
@@ -118,7 +107,6 @@ export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHe
                 </div>
 
                 <div className="grid grid-cols-2 gap-8">
-                    {/* Левая колонка: Геометрия */}
                     <div className="space-y-4">
                         <div className="flex flex-col gap-1.5 relative">
                             <label className="text-[10px] uppercase font-black text-editor-text/40 tracking-widest">Ширина</label>
@@ -134,7 +122,6 @@ export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHe
                             </div>
                         </div>
 
-                        {/* Кнопка связки (Замок) */}
                         <div className="flex justify-center -my-2 relative z-10">
                             <button 
                                 onClick={() => setLockAspect(!lockAspect)}
@@ -160,7 +147,6 @@ export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHe
                         </div>
                     </div>
 
-                    {/* Правая колонка: Опции */}
                     <div className="space-y-4">
                         <div className="flex flex-col gap-1.5">
                             <label className="text-[10px] uppercase font-black text-editor-text/40 tracking-widest">Единицы</label>
@@ -202,7 +188,6 @@ export function ResizeDialog({ isOpen, onClose, onApply, currentWidth, currentHe
                     </div>
                 )}
 
-                {/* Подвал с кнопками (Ваш стиль) */}
                 <div className="flex justify-end items-center pt-4 border-t border-editor-border mt-2">
                     <div className="flex gap-3">
                         <button 
