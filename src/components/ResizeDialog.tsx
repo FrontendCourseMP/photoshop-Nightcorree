@@ -89,8 +89,8 @@ export function ResizeDialog({ onClose, onApply, currentWidth, currentHeight }: 
     const afterMP = (width === '' || height === '') ? '0.00' : ((width * height) / 1000000).toFixed(2);
 
     return (
-        <Modal isOpen={true} onClose={onClose} title="Масштабирование изображения">
-            <div className="flex flex-col gap-6 w-[480px] font-sans">
+        <Modal isOpen={true} onClose={onClose} title="Масштабирование изображения" initialWidth={480}>
+            <div className="flex flex-col gap-6 font-sans">
                 
                 <div className="flex items-center justify-between px-4 py-2 bg-black/40 border border-editor-border rounded-lg text-[10px] uppercase font-bold tracking-wider">
                    <div className="flex items-center gap-2">

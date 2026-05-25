@@ -48,8 +48,8 @@ export function FilterDialog({ onClose, onApply, onPreview, isGrayscale }: Filte
     };
 
     return (
-        <Modal isOpen={true} onClose={onClose} title="Пользовательский фильтр">
-            <div className="flex flex-col gap-6 w-[480px] font-sans">
+        <Modal isOpen={true} onClose={onClose} title="Пользовательский фильтр" initialWidth={500}>
+            <div className="flex flex-col gap-6 font-sans">
                 
                 <div className="grid grid-cols-2 gap-8">
                     {/* Левая колонка: Матрица (Строго по заданию) */}
