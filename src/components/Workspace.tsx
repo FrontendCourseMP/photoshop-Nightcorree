@@ -256,11 +256,9 @@ export function Workspace({
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
         
-        // Масштабирование координат: экранные -> в пиксели холста (уже смасштабированного)
         const canvasX = (e.clientX - rect.left) * (canvas.width / rect.width);
         const canvasY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-        // Масштабирование координат: пиксели холста -> оригинальные пиксели изображения
         const x = Math.floor(canvasX / viewScale);
         const y = Math.floor(canvasY / viewScale);
 

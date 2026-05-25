@@ -58,22 +58,16 @@ function App() {
     setPreviewLUTs(null);
     
     // ЛАБА 4: Авто-масштабирование под размер экрана (с отступом 50px)
-    const viewportWidth = window.innerWidth - 300; // вычитаем боковую панель
-    const viewportHeight = window.innerHeight - 150; // вычитаем тулбар и статусбар
+    const viewportWidth = window.innerWidth - 300; 
+    const viewportHeight = window.innerHeight - 150; 
     
     const scaleX = (viewportWidth - 100) / meta.width;
     const scaleY = (viewportHeight - 100) / meta.height;
     
-    // Выбираем минимальный масштаб, чтобы вписаться по обеим осям, 
-    // но ограничиваем диапазоном 12% - 300% согласно заданию.
     let initialScale = Math.min(scaleX, scaleY);
     initialScale = Math.max(0.12, Math.min(3, initialScale));
-    
-    // Находим ближайшее значение из нашего списка SCALE_OPTIONS для красоты (опционально)
-    // или просто устанавливаем расчетное. Установим расчетное для точности.
     setViewScale(initialScale);
     
-    // ПЕРФОРМАНС: Генерируем миниатюру в фоне
     setTimeout(() => {
         setThumbnailImageData(createThumbnail(imageData, 48, 48));
     }, 100);
@@ -83,13 +77,8 @@ function App() {
 
   const handleApplyLevels = (luts: Record<string, Uint8Array>) => {
     if (!originalImageData) return;
-    
-    // ПРОВЕРКА: Применяем уровни ко ВСЕМ каналам (все true), 
-    // чтобы не "запекать" текущую видимость (например, скрытую Альфу) в данные навсегда.
     const allChannels: ChannelState = { r: true, g: true, b: true, a: true };
     const targetBuffer = new ImageData(originalImageData.width, originalImageData.height);
-    
-    // Исправляем типизацию для корректного билда
     const lutsTyped = luts as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
     const processed = applyImageFilters(originalImageData, allChannels, isGrayscale, lutsTyped, targetBuffer);
     
@@ -106,10 +95,7 @@ function App() {
 
   const handleApplyResize = (width: number, height: number, method: InterpolationMethod) => {
     if (!originalImageData) return;
-    
-    // Физически меняем размер оригинального изображения (Лабораторная 4)
     const resized = ScalingProvider.scale(originalImageData, width, height, method);
-    
     setOriginalImageData(resized);
     setThumbnailImageData(createThumbnail(resized, 48, 48));
     setImageMeta(prev => prev ? { ...prev, width, height } : null);
@@ -131,10 +117,7 @@ function App() {
   }, []);
 
   return (
-    // Корневой контейнер: жестко 100% высоты и ширины, скрываем глобальный скролл
     <div className="h-screen w-full flex flex-col bg-editor-bg text-editor-text overflow-hidden">
-      
-      {/* Обертка для Toolbar: запрещаем сжиматься по высоте */}
       <div className="shrink-0">
         <Toolbar 
           onFileSelect={setSelectedFile} 
@@ -147,7 +130,6 @@ function App() {
         />
       </div>
       
-      {/* Рабочая область: занимает всё доступное место (flex-1) и позволяет внутренний скролл (overflow-auto) */}
       <main className="flex-1 overflow-hidden relative min-h-0 flex">
         <div className="flex-1 relative overflow-hidden">
           <Workspace 
@@ -173,7 +155,6 @@ function App() {
         />
       </main>
       
-      {/* Обертка для StatusBar: запрещаем сжиматься по высоте */}
       <div className="shrink-0">
         <StatusBar 
           width={imageMeta?.width || 0} 
@@ -214,7 +195,6 @@ function App() {
           isGrayscale={isGrayscale}
         />
       )}
-      
     </div>
   );
 }

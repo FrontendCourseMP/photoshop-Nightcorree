@@ -3,13 +3,13 @@ import type { ChannelState } from '../components/ChannelPanel';
 export type EdgeStrategy = 'black' | 'white' | 'copy';
 
 /**
- * Стандартные ядра для фильтров
+ * Стандартные ядра для фильтров согласно заданию
  */
 export const FILTER_PRESETS = {
     identity: [0, 0, 0, 0, 1, 0, 0, 0, 0],
     sharpen: [0, -1, 0, -1, 5, -1, 0, -1, 0],
-    gaussian: [1/16, 2/16, 1/16, 2/16, 4/16, 2/16, 1/16, 2/16, 1/16],
-    boxBlur: [1/9, 1/9, 1/9, 1/9, 1/9, 1/9, 1/9, 1/9, 1/9],
+    gaussian: [1, 2, 1, 2, 4, 2, 1, 2, 1], // Будет нормализовано на 16
+    boxBlur: [1, 1, 1, 1, 1, 1, 1, 1, 1],   // Будет нормализовано на 9
     pruittX: [-1, 0, 1, -1, 0, 1, -1, 0, 1],
     pruittY: [-1, -1, -1, 0, 0, 0, 1, 1, 1]
 };
@@ -27,19 +27,18 @@ export function applyConvolution(
     const dst = new ImageData(w, h);
     const dstData = dst.data;
 
-    // Сумма коэффициентов ядра (для нормализации, если нужно)
-    // Но в Custom фильтрах обычно используют сырые значения.
+    // Расчет суммы весов для нормализации
+    let kernelSum = kernel.reduce((a, b) => a + b, 0);
+    if (kernelSum === 0) kernelSum = 1; 
     
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const idx = (y * w + x) * 4;
 
-            // Обрабатываем каждый цветовой канал (RGBA)
             for (let c = 0; c < 4; c++) {
                 const isAlpha = c === 3;
                 const channelKey = isAlpha ? 'a' : (c === 0 ? 'r' : (c === 1 ? 'g' : 'b'));
                 
-                // Если канал не активен для фильтрации, копируем оригинал
                 if (!activeChannels[channelKey as keyof ChannelState]) {
                     dstData[idx + c] = srcData[idx + c];
                     continue;
@@ -47,16 +46,21 @@ export function applyConvolution(
 
                 let sum = 0;
 
-                // Проход по ядру 3x3
-                for (let ky = -1; y + ky <= y + 1; ky++) {
+                for (let ky = -1; ky <= 1; ky++) {
                     for (let kx = -1; x + kx <= x + 1; kx++) {
-                        const iy = y + ky;
+                        // ky и kx здесь относительные смещения (-1, 0, 1)
+                    }
+                }
+                
+                // Исправленный цикл прохода по ядру
+                for (let ky = -1; ky <= 1; ky++) {
+                    const iy = y + ky;
+                    for (let kx = -1; kx <= 1; kx++) {
                         const ix = x + kx;
                         const weight = kernel[(ky + 1) * 3 + (kx + 1)];
 
                         let pixelVal: number;
 
-                        // Логика обработки краев
                         if (ix < 0 || ix >= w || iy < 0 || iy >= h) {
                             if (edgeStrategy === 'black') {
                                 pixelVal = isAlpha ? 255 : 0;
@@ -75,8 +79,7 @@ export function applyConvolution(
                     }
                 }
                 
-                // Ограничиваем диапазон 0-255
-                dstData[idx + c] = Math.max(0, Math.min(255, sum));
+                dstData[idx + c] = Math.max(0, Math.min(255, sum / kernelSum));
             }
         }
     }
