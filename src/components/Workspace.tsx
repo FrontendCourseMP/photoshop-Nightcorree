@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { decodeGB7 } from '../utils/gb7Codec';
 import { rgbToLab, applyImageFilters } from '../utils/imageUtils';
 import { ScalingProvider, type InterpolationMethod } from '../utils/interpolation';
+import { applyConvolution, type EdgeStrategy } from '../utils/filters';
 import type { ChannelState } from './ChannelPanel';
 import type { EditorTool } from './Toolbar';
 import type { ColorInfo } from '../App';
@@ -24,11 +25,13 @@ interface WorkspaceProps {
     imageData: ImageData | null;
     viewScale: number;
     interpolationMethod: InterpolationMethod;
+    previewFilter: { kernel: number[], strategy: EdgeStrategy, channels: ChannelState } | null;
 }
 
 export function Workspace({ 
     file, onImageLoaded, activeChannels, activeTool, onColorPicked, 
-    imageMeta, levelsLUTs, imageData, viewScale, interpolationMethod 
+    imageMeta, levelsLUTs, imageData, viewScale, interpolationMethod,
+    previewFilter
 }: WorkspaceProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -198,7 +201,7 @@ export function Workspace({
 
         // ЭТАП А: Применяем фильтры (Уровни, Каналы) в оригинальном разрешении
         let finalOriginalData: ImageData;
-        if (!levelsLUTs && isDefaultChannels) {
+        if (!levelsLUTs && isDefaultChannels && !previewFilter) {
             finalOriginalData = imageData;
         } else {
             // Исправляем типизацию для корректного билда
@@ -210,6 +213,16 @@ export function Workspace({
                 lutsTyped,
                 targetDataRef.current!
             );
+
+            // ПРИМЕНЯЕМ СВЕРТКУ ДЛЯ ПРЕДПРОСМОТРА (Лабораторная 5)
+            if (previewFilter) {
+                finalOriginalData = applyConvolution(
+                    finalOriginalData, 
+                    previewFilter.kernel, 
+                    previewFilter.strategy, 
+                    previewFilter.channels
+                );
+            }
         }
 
         // ЭТАП Б: Масштабируем результат для отображения (Лабораторная 4)
@@ -235,7 +248,7 @@ export function Workspace({
         }
         
         hasBeenFilteredRef.current = true;
-    }, [imageData, activeChannels, imageMeta, levelsLUTs, viewScale, interpolationMethod]);
+    }, [imageData, activeChannels, imageMeta, levelsLUTs, viewScale, interpolationMethod, previewFilter]);
 
     // 4. Логика пипетки
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

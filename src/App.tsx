@@ -5,8 +5,10 @@ import { StatusBar } from './components/StatusBar';
 import { ChannelPanel, type ChannelState } from './components/ChannelPanel';
 import { LevelsDialog } from './components/LevelsDialog';
 import { ResizeDialog } from './components/ResizeDialog';
+import { FilterDialog } from './components/FilterDialog';
 import { createThumbnail, applyImageFilters } from './utils/imageUtils';
 import { ScalingProvider, type InterpolationMethod } from './utils/interpolation.ts';
+import { applyConvolution, type EdgeStrategy } from './utils/filters';
 
 export interface ColorInfo {
   x: number;
@@ -26,8 +28,10 @@ function App() {
   const [pickedColor, setPickedColor] = useState<ColorInfo | null>(null);
   const [isLevelsOpen, setIsLevelsOpen] = useState(false);
   const [isResizeOpen, setIsResizeOpen] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   
   const [previewLUTs, setPreviewLUTs] = useState<Record<string, Uint8Array> | null>(null);
+  const [previewFilter, setPreviewFilter] = useState<{ kernel: number[], strategy: EdgeStrategy, channels: ChannelState } | null>(null);
 
   // ЛАБА 4: Состояние масштаба и метода интерполяции
   const [viewScale, setViewScale] = useState(1); // 1 = 100%
@@ -112,6 +116,20 @@ function App() {
     setIsResizeOpen(false);
   };
 
+  const handleApplyFilters = (kernel: number[], strategy: EdgeStrategy, activeChannels: ChannelState) => {
+    if (!originalImageData) return;
+    const processed = applyConvolution(originalImageData, kernel, strategy, activeChannels);
+    setOriginalImageData(processed);
+    setThumbnailImageData(createThumbnail(processed, 48, 48));
+    setPreviewFilter(null);
+    setIsFiltersOpen(false);
+  };
+
+  const handlePreviewFilter = useCallback((kernel: number[] | null, strategy: EdgeStrategy, activeChannels: ChannelState) => {
+    if (!kernel) setPreviewFilter(null);
+    else setPreviewFilter({ kernel, strategy, channels: activeChannels });
+  }, []);
+
   return (
     // Корневой контейнер: жестко 100% высоты и ширины, скрываем глобальный скролл
     <div className="h-screen w-full flex flex-col bg-editor-bg text-editor-text overflow-hidden">
@@ -124,6 +142,7 @@ function App() {
           onToolChange={setActiveTool}
           onOpenLevels={() => setIsLevelsOpen(true)}
           onOpenResize={() => setIsResizeOpen(true)}
+          onOpenFilters={() => setIsFiltersOpen(true)}
           hasImage={!!imageMeta}
         />
       </div>
@@ -142,6 +161,7 @@ function App() {
             imageData={originalImageData}
             viewScale={viewScale}
             interpolationMethod={interpolationMethod}
+            previewFilter={previewFilter}
           />
         </div>
         <ChannelPanel 
@@ -183,6 +203,15 @@ function App() {
           onApply={handleApplyResize}
           currentWidth={originalImageData?.width || 0}
           currentHeight={originalImageData?.height || 0}
+        />
+      )}
+
+      {isFiltersOpen && (
+        <FilterDialog
+          onClose={() => setIsFiltersOpen(false)}
+          onApply={handleApplyFilters}
+          onPreview={handlePreviewFilter}
+          isGrayscale={isGrayscale}
         />
       )}
       
