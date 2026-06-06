@@ -1,4 +1,4 @@
-import type { FilterWorkerMessage, FilterWorkerResponse } from '../workers/filter.worker';
+import type { FilterWorkerResponse } from '../workers/filter.worker';
 import type { EdgeStrategy } from './filters';
 import type { ChannelState } from '../components/ChannelPanel';
 
