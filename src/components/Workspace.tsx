@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { decodeGB7 } from '../utils/gb7Codec';
 import { rgbToLab, applyImageFilters } from '../utils/imageUtils';
 import { ScalingProvider, type InterpolationMethod } from '../utils/interpolation';
-import { applyConvolution, type EdgeStrategy } from '../utils/filters';
+import { type EdgeStrategy } from '../utils/filters';
+import { filterWorkerManager } from '../utils/filterWorkerManager';
 import type { ChannelState } from './ChannelPanel';
 import type { EditorTool } from './Toolbar';
 import type { ColorInfo } from '../App';
@@ -39,6 +40,10 @@ export function Workspace({
     
     // ПЕРФОРМАНС: Буферы для результирующих данных (Zero-Allocation)
     const targetDataRef = useRef<ImageData | null>(null);
+
+    // СОСТОЯНИЕ ДЛЯ АСИНХРОННОЙ СВЕРТКИ
+    const [convolvedData, setConvolvedData] = useState<ImageData | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
 
     // ПЕРФОРМАНС: Гибридный рендеринг для Zoom (Fast + High Quality)
     const isZoomingRef = useRef(false);
@@ -88,6 +93,7 @@ export function Workspace({
             hasBeenFilteredRef.current = false;
             targetDataRef.current = null;
             sourceCanvasRef.current = null;
+            setConvolvedData(null);
         }
     }, [file]);
 
@@ -215,6 +221,49 @@ export function Workspace({
         };
     }, [viewScale]);
 
+    // 2.2 Логика асинхронного применения фильтра свертки для превью
+    useEffect(() => {
+        if (!previewFilter || !imageData || !imageMeta) {
+            setConvolvedData(null);
+            setIsProcessing(false);
+            return;
+        }
+
+        let isCancelled = false;
+        const isGrayscale = imageMeta.colorDepth === 7 || imageMeta.colorDepth === 8;
+        
+        // 1. Применяем уровни и каналы (базовая фильтрация, она быстрая)
+        const lutsTyped = levelsLUTs as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
+        const baseFiltered = applyImageFilters(
+            imageData, 
+            activeChannels, 
+            isGrayscale,
+            lutsTyped,
+            new ImageData(imageData.width, imageData.height)
+        );
+
+        // 2. Запускаем тяжелую свертку в воркере
+        setIsProcessing(true);
+        filterWorkerManager.applyConvolution(
+            baseFiltered,
+            previewFilter.kernel,
+            previewFilter.strategy,
+            previewFilter.channels,
+            isGrayscale
+        ).then(result => {
+            if (!isCancelled) {
+                setConvolvedData(result);
+                setIsProcessing(false);
+            }
+        }).catch(() => {
+            if (!isCancelled) setIsProcessing(false);
+        });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [previewFilter, imageData, activeChannels, levelsLUTs, imageMeta]);
+
     // 3. Логика отрисовки при изменении (Оптимизировано + Лаба 4 Интерполяция + Фикс Resize)
     useEffect(() => {
         // ВАЖНО: Если imageData отсутствует (идет загрузка нового файла), выходим.
@@ -238,7 +287,23 @@ export function Workspace({
 
         // ЭТАП А: Применяем фильтры (Уровни, Каналы, Свертка)
         let finalOriginalData: ImageData;
-        if (!levelsLUTs && isDefaultChannels && !previewFilter) {
+        
+        if (previewFilter) {
+            if (convolvedData && convolvedData.width === imageData.width && convolvedData.height === imageData.height) {
+                // Если асинхронный результат готов — используем его
+                finalOriginalData = convolvedData;
+            } else {
+                // Пока воркер считает, показываем базовую фильтрацию (уровни/каналы)
+                const lutsTyped = levelsLUTs as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
+                finalOriginalData = applyImageFilters(
+                    imageData, 
+                    activeChannels, 
+                    isGrayscale,
+                    lutsTyped,
+                    targetDataRef.current!
+                );
+            }
+        } else if (!levelsLUTs && isDefaultChannels) {
             finalOriginalData = imageData;
         } else {
             const lutsTyped = levelsLUTs as { r: Uint8Array, g: Uint8Array, b: Uint8Array, a: Uint8Array };
@@ -249,20 +314,10 @@ export function Workspace({
                 lutsTyped,
                 targetDataRef.current!
             );
-
-            if (previewFilter) {
-                finalOriginalData = applyConvolution(
-                    finalOriginalData, 
-                    previewFilter.kernel, 
-                    previewFilter.strategy, 
-                    previewFilter.channels,
-                    isGrayscale
-                );
-            }
         }
 
         // ПЕРФОРМАНС: Обновляем кэш-холст для быстрого зума
-        if (!sourceCanvasRef.current) {
+        if (!sourceCanvasRef.current || sourceCanvasRef.current.width !== imageData.width || sourceCanvasRef.current.height !== imageData.height) {
             sourceCanvasRef.current = document.createElement('canvas');
             sourceCanvasRef.current.width = imageData.width;
             sourceCanvasRef.current.height = imageData.height;
@@ -300,7 +355,7 @@ export function Workspace({
         }
         
         hasBeenFilteredRef.current = true;
-    }, [imageData, activeChannels, imageMeta, levelsLUTs, viewScale, interpolationMethod, previewFilter]);
+    }, [imageData, activeChannels, imageMeta, levelsLUTs, viewScale, interpolationMethod, previewFilter, convolvedData]);
 
     // 4. Логика пипетки
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -331,8 +386,13 @@ export function Workspace({
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            className="w-full h-full bg-editor-bg flex overflow-auto p-12 no-scrollbar"
+            className="w-full h-full bg-editor-bg flex overflow-auto p-12 no-scrollbar relative"
         >
+            {isProcessing && (
+                <div className="absolute top-4 right-4 bg-editor-accent/80 text-white px-3 py-1 rounded-full text-[10px] font-bold animate-pulse z-50">
+                    ОБРАБОТКА...
+                </div>
+            )}
             <canvas
                 ref={canvasRef}
                 onClick={handleCanvasClick}
@@ -345,3 +405,4 @@ export function Workspace({
         </div>
     );
 }
+

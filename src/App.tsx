@@ -8,7 +8,8 @@ import { ResizeDialog } from './components/ResizeDialog';
 import { FilterDialog } from './components/FilterDialog';
 import { createThumbnail, applyImageFilters } from './utils/imageUtils';
 import { ScalingProvider, type InterpolationMethod } from './utils/interpolation.ts';
-import { applyConvolution, type EdgeStrategy } from './utils/filters';
+import { type EdgeStrategy } from './utils/filters';
+import { filterWorkerManager } from './utils/filterWorkerManager';
 
 export interface ColorInfo {
   x: number;
@@ -113,9 +114,18 @@ function App() {
     setIsResizeOpen(false);
   };
 
-  const handleApplyFilters = (kernel: number[], strategy: EdgeStrategy, activeChannels: ChannelState) => {
+  const handleApplyFilters = async (kernel: number[], strategy: EdgeStrategy, activeChannels: ChannelState) => {
     if (!originalImageData) return;
-    const processed = applyConvolution(originalImageData, kernel, strategy, activeChannels, isGrayscale);
+    
+    // Используем воркер для применения фильтра к оригиналу (предотвращает зависание на больших фото)
+    const processed = await filterWorkerManager.applyConvolution(
+      originalImageData, 
+      kernel, 
+      strategy, 
+      activeChannels, 
+      isGrayscale
+    );
+    
     setOriginalImageData(processed);
     setThumbnailImageData(createThumbnail(processed, 48, 48));
     setPreviewFilter(null);
